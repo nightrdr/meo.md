@@ -25,16 +25,39 @@ import fs from 'node:fs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Compile mobile shared sources to ESM, then post-process imports to add .js extensions
-// so plain Node ESM can resolve them.
+// so plain Node ESM can resolve them. tsc's CLI doesn't expand `**` globs;
+// enumerate explicit files via `find` instead.
+//
+// We deliberately exclude the `ai/` subtree because its mobile-only modules
+// (llamaRn, foundation, vectorStore.sqlite) pull in RN-specific deps
+// (expo-file-system, op-sqlite) that don't resolve under plain Node. This
+// test's scope is crypto + API interop, not AI — that's tested elsewhere.
+const sources = execSync(`find src/shared -name '*.ts' -not -name '*.d.ts' -not -path '*/ai/*'`, { cwd: __dirname })
+  .toString().trim().split('\n').filter(Boolean);
 execSync(
-  `npx tsc --module ES2022 --target ES2022 --moduleResolution node --esModuleInterop --skipLibCheck --outDir test-dist src/shared/*.ts`,
-  { cwd: __dirname, stdio: 'inherit' },
+  `npx tsc --module ES2022 --target ES2022 --moduleResolution node --esModuleInterop --skipLibCheck --outDir test-dist ${sources.map(s => `'${s}'`).join(' ')}`,
+  { cwd: __dirname, stdio: 'inherit', shell: '/bin/sh' },
 );
-for (const f of fs.readdirSync(path.join(__dirname, 'test-dist'))) {
-  if (!f.endsWith('.js')) continue;
-  const p = path.join(__dirname, 'test-dist', f);
+
+function walk(dir) {
+  const out = [];
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) out.push(...walk(p));
+    else if (e.name.endsWith('.js')) out.push(p);
+  }
+  return out;
+}
+
+for (const p of walk(path.join(__dirname, 'test-dist'))) {
   let s = fs.readFileSync(p, 'utf8');
-  s = s.replace(/from ['"](\.\/[^'"]+)['"]/g, (_m, spec) => spec.endsWith('.js') ? `from '${spec}'` : `from '${spec}.js'`);
+  // Add .js to relative imports — both ./ and ../ — that don't already have it.
+  s = s.replace(/from ['"](\.\.?\/[^'"]+)['"]/g, (_m, spec) =>
+    spec.endsWith('.js') ? `from '${spec}'` : `from '${spec}.js'`,
+  );
+  // The barrel imports from './ai/index'; we excluded that subtree, so strip
+  // the line so the dist barrel still loads under plain Node.
+  s = s.replace(/^export \* as ai from .*ai\/index.*;\s*$/gm, '');
   fs.writeFileSync(p, s);
 }
 const mobile = await import('./test-dist/index.js');

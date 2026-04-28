@@ -23,15 +23,19 @@ like; the others describe what it's becoming.
   │   Folders + tags         ✅    │         │   Folders + tags     ✅ │
   │   Search + context menus ✅    │         │   Search + sheets    ✅ │
   │   AI panel + slash menu  ✅    │         │   AI sheet + RAG     ✅ │
-  │   Local LLM (Ollama)     ✅    │         │   Local LLM      ⚠ 3.5  │
+  │   Local LLM (Ollama)     ✅    │         │   Local LLM (llama.rn) ✅* │
   │   Embeddings + RAG       ✅    │         │   Retrieval (BM25)   ✅ │
-  │                                │         │   Embeddings (real)⚠ 3.5│
+  │                                │         │   Embeddings (real)⚠ ¹  │
   │   Settings → AI          ✅    │         │   Settings → AI      ✅ │
-  │   Tauri native window    ✅    │         │   expo prebuild     ⚠** │
+  │   Attachments (E2EE)     ✅    │         │   Attachments       ⚠ ² │
+  │   Tauri native window    ✅    │         │   Bare workflow      ✅ │
   └────────────────────────────────┘         └─────────────────────────┘
 
-           ⚠ 3.5  next milestone, requires `expo prebuild`
-           ⚠**    one-way door; deferred until you say go
+           ✅* runtime + plumbing shipped; needs an iOS simulator or device build
+           ⚠ ¹  embedder runtime installed (onnxruntime-react-native);
+                wiring bge-small + tokenizer is the remaining piece
+           ⚠ ²  shared crypto pipeline is mobile-compatible; only the mobile
+                file-picker UI is missing (small follow-up)
 ```
 
 Both clients talk to a **self-hosted Supabase** (`supabase start`) over
@@ -144,6 +148,8 @@ All four suites are green.
 | **Ask Meo panel** (right drawer, Ask + Chat modes, citations) | ✅ — verified end-to-end against Ollama | `src/AIPanel.tsx`, `src/aiStore.ts` |
 | **Slash menu** (`/` in editor → Summarize / Action items / Outline / Improve) | ✅ — verified streaming into editor | `src/SlashMenu.tsx` |
 | **Settings → AI** (Local models with Ollama pull, Embeddings progress + force re-index, Cloud locked v1.1) | ✅ — verified | `src/Settings.tsx` |
+| **Attachments E2EE pipeline** (per-attachment HKDF key, AES-256-GCM streaming encrypt, encrypted metadata blob, signed PUT/GET URLs via Edge Functions, iDrive prod / MinIO dev fallback) | ✅ — round-trip test passes; bytes ciphertext at rest; filename never plaintext in DB | `packages/shared/src/attachments.ts`, `packages/desktop/src/AttachmentRenderer.tsx`, `supabase/functions/attachments-{upload,download}-url/`, `supabase/migrations/20260428000000_attachments.sql` |
+| **Image upload / drop in editor** (file picker, drag-and-drop, custom TipTap node view that fetches + decrypts on demand) | ✅ — wired into `Editor.tsx` toolbar + drop zone | `src/Editor.tsx`, `src/AttachmentRenderer.tsx` |
 
 ### Privacy invariants verified live
 
@@ -193,7 +199,7 @@ Within budgets from `05-llm-architecture.md` §10.
 - **`@react-native-async-storage/async-storage`** for prefs + encrypted-note cache
 - **`expo-clipboard`** for copy actions
 
-### What's there now (phase 1, phase 2, **phase 3 JS-side** all shipped)
+### What's there now (phases 1–3 + **phase 3.5 native** shipped)
 
 | Surface | Status | File |
 |---|---|---|
@@ -216,22 +222,27 @@ Within budgets from `05-llm-architecture.md` §10.
 | **AI bottom sheet** wired to RAG + status states (loading / no-backend / no-model / ready / error) | ✅ — gracefully degrades to BM25-only when embedder is no-op | `src/AISheet.tsx` |
 | **Settings → AI screen** (Local models discovered from Ollama, Embeddings status + Force re-index, Cloud v1.1 lock) | ✅ | `app/settings/ai.tsx` |
 | Cross-platform crypto interop with desktop | ✅ — verified by `test-interop.mjs` | `src/shared/crypto.ts` (noble) |
-| Bundles cleanly for iOS via Expo's Metro | ✅ — 2.99 MB hbc | — |
+| Bundles cleanly for iOS via Expo's Metro | ✅ — 3.08 MB hbc | — |
+| **`expo prebuild` done** (irreversible — bare workflow, Expo Go gone) | ✅ — `ios/` + `android/` folders generated, gitignored | `packages/mobile/ios/`, `packages/mobile/android/` |
+| **`llama.rn` integration** (RN binding around llama.cpp; Metal on iOS, Vulkan/OpenCL/CPU on Android) | ✅ shipped — `LlamaRnBackend` implements `Generator`; downloads GGUF Q4 quants from Hugging Face Hub on demand via `expo-file-system` | `src/shared/ai/backends/llamaRn.ts` |
+| **`op-sqlite` vector store** (replaces AsyncStorage-backed JSON for scale) | ✅ — schema `note_vectors(note_id, dim, vec, vec_hash, embedder_id)` per spec §6.2 | `src/shared/ai/vectorStore.sqlite.ts` |
+| **Apple FoundationModels backend** (iOS 18+ system LLM, free, no download) | ⚠ JS bridge wired + capability-gated; native Swift Pod (`FoundationLLMModule.swift`) not yet shipped — `isAvailable()` returns false until `NativeModules.FoundationLLM` exists | `src/shared/ai/backends/foundation.ts` |
+| **`onnxruntime-react-native`** runtime for the real bge-small embedder | ⚠ runtime installed + Expo plugin works; the WordPiece tokenizer + ONNX model file are the next step. `NoopEmbedder` remains the default until then (BM25 carries retrieval) | `src/shared/ai/embeddings.ts` |
 
-### What's not yet on mobile (phase 3.5 — requires `expo prebuild`)
+### What's still pending on mobile
 
 | Missing | Plan |
 |---|---|
-| **Real on-device LLM runtime** | **`llama.rn`** (Metal on iOS, Vulkan/OpenCL on Android). Requires `npx expo prebuild` — one-way door |
-| **Real bge-small-en-v1.5 embedder** | Currently `NoopEmbedder` (zero vectors, BM25 carries retrieval). Phase 3.5 swaps in `transformers-rn` (native ONNX) |
-| Apple FoundationModels backend (iOS 18+, free, in-OS) | Native module gated by `Platform.Version >= '18'` |
-| Gemini Nano via ML Kit GenAI | Native module gated by Pixel 8+ / Galaxy S24+ |
-| `op-sqlite` vector store | AsyncStorage today (fine for <5k notes); upgrade to SQLite for scale |
-| Slash menu inside the editor | Keyboard-toolbar `/` button; lower priority than phase 3.5 |
-| Background fetch / push notifications for sync | Per spec §5.3, deferred |
-| Biometric unlock (LocalAuthentication) | Per spec §5.3, deferred |
-| Camera / image picker / attachments | Per spec §5.4, deferred |
-| TenTap rich editor | Per spec §5.2, deferred — plain TextInput is fine for v1 |
+| **Real bge-small-en-v1.5 embedder** | Runtime is installed (`onnxruntime-react-native`); next step is the WordPiece tokenizer + ONNX file + pooling. ~half day. Until then, `NoopEmbedder` is the default and BM25 carries retrieval. |
+| **FoundationModels Swift Pod** | JS bridge is wired in `backends/foundation.ts`; need a `FoundationLLMModule.swift` exposing `LanguageModelSession` to RN. Then iOS 18+ devices get a free 3 GB-ish model with zero storage cost. |
+| **Gemini Nano via ML Kit GenAI** | Equivalent for supported Android (Pixel 8+, Galaxy S24+). Same shape as Apple's bridge. |
+| **iOS simulator / device build** | This host doesn't have an iOS simulator installed (`xcrun simctl list devices` is empty). Install via Xcode → Components or `xcodebuild -downloadPlatform iOS`, then `npx expo run:ios`. Bundle export already works. |
+| **Mobile attachments file picker** | Shared `attachments.ts` is mobile-compatible; only the file-picker UI in the mobile note editor is missing. Door A's strict scope kept it out. |
+| Slash menu inside the editor | Keyboard-toolbar `/` button; lower priority. |
+| Background fetch / push notifications for sync | Per spec §5.3, deferred. |
+| Biometric unlock (LocalAuthentication) | Per spec §5.3, deferred. |
+| Camera capture | Per spec §5.4, deferred (file picker covers most cases). |
+| TenTap rich editor | Per spec §5.2, deferred — plain TextInput is fine for v1. |
 
 ---
 
@@ -275,10 +286,10 @@ be added to the mobile mirror in phase 3 (next).
 | §3.6 | Local LLM via llama.cpp wrapper | Ollama on desktop; llama.rn deferred to phase 3 on mobile | Ollama already does GGUF + downloads + GPU offload; not bundling the runtime is the right MVP call. |
 | §4 | Tauri 2.x desktop shell | Tauri 2 wired up; web app also works standalone | Both ship. |
 | §5.2 | TenTap (TipTap-in-WebView) on mobile | Plain markdown TextInput | Per `04-mobile.md`, TenTap is the v1.5 nice-to-have. |
-| §5.5 | Local LLM on mobile via llama.cpp NDK / Metal | Phase 3 deferred behind `expo prebuild` | One-way door; intentionally last. |
+| §5.5 | Local LLM on mobile via llama.cpp NDK / Metal | **Shipped** via `llama.rn` (binding around llama.cpp). Embedder runtime in place; bge-small wiring is the remaining step. | One-way door taken. |
 | §2.5 | AI proxy as a metered passthrough | Built into the spec only — not yet shipped | Cloud LLMs are tier-gated; ship with v1.1 alongside frontier keys. |
 | §2.6 | Paddle billing | Not in v1.0 | Auth gate only; revenue path comes after launch. |
-| §3.8 | Attachments with streaming AES-GCM | Not in v1.0 | iDrive design locked in earlier convos; ships in a later iteration. |
+| §3.8 | Attachments with streaming AES-GCM | **Shipped** — per-attachment HKDF key, 1 MiB chunked AES-GCM, encrypted metadata blob, signed URLs via Edge Functions, iDrive prod / MinIO local. E2E test green. | Mobile UI follow-up is the only remainder. |
 | §6.1 | QR pairing for new device | Manual passphrase + Secret Key only | QR pairing is a substantial side-channel; manual entry covers the same threat model. |
 
 Nothing here paints us into a corner; each row has a non-destructive

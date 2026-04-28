@@ -232,10 +232,11 @@ the surface tokens automatically via `prefers-color-scheme`.
 | Three-pane (desktop) / drilldown navigation (mobile) | ✓ | ✓ — Meo design system, MeoMark, warm paper, serif body |
 | Ask Meo panel (right drawer / bottom sheet) | ✓ wired to Ollama with full RAG (BM25 + vector + RRF + MMR + citations) | ✓ wired to Ollama with same RAG plumbing; default embedder is no-op so BM25 carries retrieval until phase 3.5 swaps in `transformers-rn` |
 | Slash menu in editor | ✓ | not yet — keyboard-toolbar `/` button planned, lower priority than 3.5 |
-| Local LLM via Ollama / llama.rn | ✓ Ollama | shell ready; native runtime needs `npx expo prebuild` + `llama.rn` (phase 3.5, one-way door) |
+| Local LLM via Ollama / llama.rn | ✓ Ollama | ✓ `llama.rn` shipped (Metal/Vulkan/OpenCL). GGUF model registry + downloads via HF Hub. Needs an iOS simulator or device for `expo run:ios` to actually launch. |
 | BM25 + vector + RRF + MMR retrieval | ✓ | ✓ (BM25 + RRF; vector contributes nothing until phase 3.5 real embedder) |
-| Local embeddings (bge-small-en-v1.5) | ✓ | not yet — phase 3.5 (`transformers-rn` after prebuild) |
-| Settings → AI screen (model install, embeddings status) | ✓ | ✓ — Local models from Ollama, Embeddings progress + Force re-index, Cloud locked v1.1 |
+| Local embeddings (bge-small-en-v1.5) | ✓ | runtime installed (`onnxruntime-react-native`); WordPiece tokenizer + ONNX file is the remaining wiring. `NoopEmbedder` default; BM25 carries retrieval. |
+| Settings → AI screen (model install, embeddings status) | ✓ | ✓ — Local GGUF download (Wi-Fi + resumable + progress) + Apple Intelligence row on iOS 18+ + Embeddings progress |
+| **Attachments** (E2EE images / files via iDrive S3 + MinIO local fallback) | ✓ — file picker, drag-and-drop, encrypted at rest, custom TipTap renderer | shared crypto pipeline ready; mobile file-picker UI is a small follow-up |
 
 The architecture for the not-yet-mobile features is locked in
 [`specs/05-llm-architecture.md`](specs/05-llm-architecture.md). Mobile

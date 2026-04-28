@@ -15,6 +15,8 @@ import { AIControls, MODELS } from './AIControls';
 import { AIPanel } from './AIPanel';
 import { Settings } from './Settings';
 import { peekAIRuntime } from './aiStore';
+import { setAttachmentsContext } from './AttachmentRenderer';
+import { supabaseUrl, supabaseAnonKey } from './session';
 
 type Status = 'idle' | 'syncing' | 'saving' | 'error';
 
@@ -124,6 +126,17 @@ export default function App() {
     setAiOn(meta.ai_on ?? true);
     setModelId(meta.model_id ?? MODELS[0].id);
     setSession(s);
+    // Populate the attachments-renderer shim so Editor.tsx + AttachmentRenderer
+    // can build an authed AttachmentsClient on demand without prop-drilling
+    // the master key.
+    if (s.api.jwt) {
+      setAttachmentsContext({
+        masterRaw: s.masterRaw,
+        jwt: s.api.jwt,
+        supabaseUrl,
+        supabaseAnonKey,
+      });
+    }
     await rehydrateNotes(s);
     refresh();
     try {
@@ -233,6 +246,7 @@ export default function App() {
   const handleLogout = useCallback(async () => {
     if (!confirm('Sign out and clear local cache on this device?')) return;
     await clearAll();
+    setAttachmentsContext(null);
     setSession(null);
     setSelectedId(null);
   }, []);

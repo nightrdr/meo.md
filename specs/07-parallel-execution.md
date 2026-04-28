@@ -104,11 +104,28 @@ When both agents finish:
    ```
 5. Update `06-current-status.md` to reflect both doors landed, and update README.
 
-## Status
+## Status — both doors landed
 
-| Door | Started | Finished | Notes |
-|---|---|---|---|
-| A — Mobile native AI | (pending) | (pending) | |
-| B — Attachments / iDrive | (pending) | (pending) | |
+| Door | Branch | Final commit | Status | Notes |
+|---|---|---|---|---|
+| A — Mobile native AI | `door-a-mobile-llm` | `ed49c3c` | ✅ merged into `master` (merge commit `e7e2a8e`) | Prebuild done; `llama.rn` + `op-sqlite` + `onnxruntime-react-native` installed; `LlamaRnBackend` + `FoundationBackend` + `SqliteVectorStore` shipped. Embedder stayed on `NoopEmbedder` (deliberate — see honest gaps below). iOS simulator wasn't available on this host, so `expo run:ios` not executed; `expo export --platform ios` is clean. |
+| B — Attachments / iDrive | `door-b-attachments` | `50d8e63` | ✅ merged into `master` (merge commit `12739c3`) | Migration `20260428000000_attachments.sql` + 2 RPCs + 2 Edge Functions + shared `AttachmentsClient` + desktop TipTap `AttachmentImageExtension`. E2E test passes; bytes verified ciphertext at rest, filename never plaintext in DB. iDrive paths via env, MinIO fallback for local dev. |
 
-This file gets updated when each agent reports completion.
+### Post-merge work (done by main session)
+
+- Wired `setAttachmentsContext` shim into `App.tsx#onAuth` and cleared on `handleLogout` (Door B's call-out).
+- Fixed `packages/mobile/test-interop.mjs` to recurse into subdirs and exclude the new `ai/` subtree (RN-only deps don't resolve under plain Node).
+- Ran the full suite: **crypto + supabase-e2e + attachments-e2e + interop — all four green.**
+
+### Honest gaps to close in follow-ups
+
+From Door A's report:
+1. **Real embedder** — `onnxruntime-react-native` is installed; need to wire bge-small-en-v1.5 ONNX file + WordPiece tokenizer + pooling. ~half day.
+2. **FoundationModels Swift Pod** — JS side is wired, native bridge isn't. ~half day per platform.
+3. **iOS simulator** — install via Xcode → Components or `xcodebuild -downloadPlatform iOS`, then `npx expo run:ios` works.
+
+From Door B's report:
+4. **Quota enforcement (10 GiB per account)** — per-attachment 100 MiB cap is enforced both client and server-side, but the workspace-wide quota isn't. Add a trigger on `meo.attachments_create`.
+5. **First-chunk preview** — `decryptFirstChunk` exists in `attachments.ts` but the renderer always does a full decrypt today.
+6. **Mobile attachments UI** — shared `attachments.ts` is mobile-compatible; the file-picker wiring in the mobile note editor is a separate ticket (Door A's strict scope kept it out).
+7. **CSS for `.upload-banner` / `.att-image` / `.drop-active`** — Door B couldn't touch `styles.css`. Functional, just unstyled.
