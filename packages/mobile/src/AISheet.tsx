@@ -65,7 +65,7 @@ export function AISheet({ visible, onClose, notes, modelId, noteTitle, onOpenNot
       try {
         const rt = await getAIRuntime();
         const av = await rt.isAvailable();
-        if (!av.ollama) {
+        if (!av.any) {
           setStatus('no-backend');
           return;
         }
