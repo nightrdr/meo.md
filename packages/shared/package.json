@@ -1,0 +1,28 @@
+{
+  "name": "@meo/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "source": "./src/index.ts",
+      "import": "./dist/index.js"
+    },
+    "./src/*": "./src/*"
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "node --test --experimental-vm-modules dist/test/*.test.js"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.0.0",
+    "@supabase/supabase-js": "^2.50.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "~5.5.4"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "@meo/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "build": "tsc -p ."
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.5",
+    "@meo/shared": "*",
+    "better-sqlite3": "^11.5.0",
+    "hono": "^4.6.10"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.14.0",
+    "tsx": "^4.19.2",
+    "typescript": "~5.5.4"
+  }
+}
