@@ -1,9 +1,18 @@
 // Settings → AI screen on mobile. Mirrors packages/desktop/src/Settings.tsx
 // (Local models + Embeddings sections, Cloud locked v1.1).
+//
+// Phase 3.5 changes:
+//   - Local models now lists llama.rn models with install / uninstall.
+//   - First-time Qwen 2.5 1.5B install button (~950 MB, Wi-Fi-only by
+//     default, resumable, progress bar).
+//   - Apple FoundationModels visible-but-unavailable on iOS 18+ when
+//     the native module isn't linked (the spec says "list as a
+//     system-os model").
+//   - Ollama section kept as a developer power-user fallback.
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
-  View, Text, ScrollView, Pressable, ActivityIndicator,
+  View, Text, ScrollView, Pressable, ActivityIndicator, Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import { ai as A } from '../../src/shared';
@@ -13,19 +22,40 @@ import { peekAIRuntime, getAIRuntime } from '../../src/aiStore';
 import { MEO, FONT_SANS, FONT_SERIF } from '../../src/theme';
 import { Icon } from '../../src/Icon';
 
+interface DownloadState {
+  modelId: string;
+  written: number;
+  total: number;
+  abort: AbortController;
+}
+
 export default function AISettingsScreen() {
   const session = getSession();
-  const [discovered, setDiscovered] = useState<Model[]>([]);
+  const [ollamaModels, setOllamaModels] = useState<Model[]>([]);
   const [ollamaUp, setOllamaUp] = useState<boolean | null>(null);
+  const [installed, setInstalled] = useState<Set<string>>(new Set());
+  const [foundationCapable, setFoundationCapable] = useState(false);
+  const [foundationAvailable, setFoundationAvailable] = useState(false);
+  const [download, setDownload] = useState<DownloadState | null>(null);
+  const downloadRef = useRef<DownloadState | null>(null);
   const [indexed, setIndexed] = useState<{ done: number; total: number } | null>(null);
   const [reindexing, setReindexing] = useState(false);
 
+  // Refresh: probe ollama, foundation models, and which GGUFs are on disk.
   const refresh = useCallback(async () => {
-    const backend = new A.OllamaBackend();
-    const ok = await backend.isAvailable();
+    const ollama = new A.OllamaBackend();
+    const ok = await ollama.isAvailable();
     setOllamaUp(ok);
-    if (ok) setDiscovered(await backend.listModels());
-    else setDiscovered([]);
+    setOllamaModels(ok ? await ollama.listModels() : []);
+
+    setFoundationCapable(A.isFoundationModelsCapable());
+    setFoundationAvailable(await A.isFoundationModelsAvailable());
+
+    const present = new Set<string>();
+    for (const id of Object.keys(A.MODEL_FILES)) {
+      if (await A.isModelInstalled(id)) present.add(id);
+    }
+    setInstalled(present);
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
@@ -43,6 +73,58 @@ export default function AISettingsScreen() {
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [session]);
+
+  const startInstall = useCallback(async (modelId: string) => {
+    const entry = A.MODEL_FILES[modelId];
+    if (!entry) return;
+    const abort = new AbortController();
+    const state: DownloadState = { modelId, written: 0, total: 0, abort };
+    setDownload(state);
+    downloadRef.current = state;
+    try {
+      const result = await A.downloadModel(modelId, (p) => {
+        if (downloadRef.current && downloadRef.current.modelId === modelId) {
+          const next = { ...downloadRef.current, written: p.written, total: p.total };
+          downloadRef.current = next;
+          setDownload(next);
+        }
+      }, abort.signal);
+      if (!result.ok) {
+        Alert.alert('Download failed', result.error);
+      } else {
+        await refresh();
+      }
+    } catch (e: any) {
+      Alert.alert('Download failed', e?.message ?? String(e));
+    } finally {
+      if (downloadRef.current?.modelId === modelId) {
+        downloadRef.current = null;
+        setDownload(null);
+      }
+    }
+  }, [refresh]);
+
+  const cancelInstall = useCallback(() => {
+    download?.abort.abort();
+    downloadRef.current = null;
+    setDownload(null);
+  }, [download]);
+
+  const uninstall = useCallback((modelId: string) => {
+    Alert.alert(
+      'Remove model?',
+      `Delete the on-device GGUF file for "${modelId}". This frees disk space and is reversible by re-installing.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove', style: 'destructive', onPress: async () => {
+            await A.deleteModel(modelId);
+            await refresh();
+          },
+        },
+      ],
+    );
+  }, [refresh]);
 
   const forceReindex = async () => {
     if (!session) return;
@@ -72,42 +154,124 @@ export default function AISettingsScreen() {
       }}>Settings · AI</Text>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 80 }}>
-        {/* ─── Local models ─── */}
+        {/* ─── Local models (llama.rn / GGUF) ─── */}
         <Text style={SECTION_H}>Local models</Text>
         <Text style={SECTION_P}>
-          Models run on this device with no internet. Mobile uses llama.rn after `npx expo prebuild` (phase 3.5). For now, this lists Ollama models if a local daemon is reachable.
+          Models run on this device with no internet. iOS uses Metal; Android uses Vulkan/OpenCL/CPU. Downloads are Wi-Fi only by default and resumable.
         </Text>
 
-        {ollamaUp === false && (
-          <View style={CALLOUT}>
-            <Icon.Sparkle size={13} stroke={MEO.ai} />
-            <Text style={CALLOUT_TEXT}>
-              No on-device LLM runtime available yet. The desktop app uses Ollama; mobile will use llama.rn after the next major build.
-            </Text>
-          </View>
-        )}
-
-        {discovered.length > 0 && (
-          <View style={{ marginHorizontal: 16, marginBottom: 14, backgroundColor: MEO.card, borderRadius: 14, borderWidth: 1, borderColor: MEO.paperEdge, overflow: 'hidden' }}>
-            {discovered.map(m => (
-              <View key={m.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderBottomWidth: 0.5, borderBottomColor: MEO.paperEdge }}>
-                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: MEO.accent }} />
+        <View style={{ marginHorizontal: 16, marginBottom: 14, backgroundColor: MEO.card, borderRadius: 14, borderWidth: 1, borderColor: MEO.paperEdge, overflow: 'hidden' }}>
+          {A.LOCAL_GGUF_CATALOGUE.map((m, idx, arr) => {
+            const isInstalled = installed.has(m.id);
+            const dl = download?.modelId === m.id ? download : null;
+            return (
+              <View
+                key={m.id}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12,
+                  borderBottomWidth: idx === arr.length - 1 ? 0 : 0.5,
+                  borderBottomColor: MEO.paperEdge,
+                }}
+              >
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isInstalled ? MEO.accent : MEO.ink3 }} />
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 15, fontWeight: '600', color: MEO.ink, fontFamily: FONT_SANS }}>{m.name}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: MEO.ink, fontFamily: FONT_SANS }}>{m.name}</Text>
+                    {m.default && (
+                      <View style={{ paddingHorizontal: 5, paddingVertical: 1, borderRadius: 3, backgroundColor: MEO.paperDeep }}>
+                        <Text style={{ fontSize: 9, fontWeight: '700', color: MEO.ink2, letterSpacing: 0.5, fontFamily: FONT_SANS }}>DEFAULT</Text>
+                      </View>
+                    )}
+                  </View>
                   <Text style={{ fontSize: 11, color: MEO.ink3, marginTop: 1, fontFamily: FONT_SANS }}>
                     {[m.size, m.tag].filter(Boolean).join(' · ')}
                   </Text>
+                  {dl && (
+                    <View style={{ marginTop: 6, gap: 4 }}>
+                      <View style={{ height: 4, backgroundColor: 'rgba(31,28,23,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+                        <View style={{
+                          height: 4, backgroundColor: MEO.accent,
+                          width: dl.total > 0 ? `${Math.min(100, (dl.written / dl.total) * 100)}%` : '5%',
+                        }} />
+                      </View>
+                      <Text style={{ fontSize: 10.5, color: MEO.ink3, fontFamily: 'Menlo' }}>
+                        {humanBytes(dl.written)}{dl.total ? ` / ${humanBytes(dl.total)}` : ''}
+                      </Text>
+                    </View>
+                  )}
                 </View>
-                <Icon.Check size={14} stroke="#3F5A2C" />
+                {isInstalled ? (
+                  <Pressable onPress={() => uninstall(m.id)} style={SMALL_BTN}>
+                    <Text style={SMALL_BTN_TEXT}>Remove</Text>
+                  </Pressable>
+                ) : dl ? (
+                  <Pressable onPress={cancelInstall} style={SMALL_BTN}>
+                    <Text style={SMALL_BTN_TEXT}>Cancel</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    onPress={() => startInstall(m.id)}
+                    disabled={!!download}
+                    style={[SMALL_BTN, { opacity: download ? 0.4 : 1 }]}
+                  >
+                    <Text style={SMALL_BTN_TEXT}>Install{m.size ? ` (${m.size})` : ''}</Text>
+                  </Pressable>
+                )}
               </View>
-            ))}
-          </View>
+            );
+          })}
+        </View>
+
+        {/* ─── System-OS models (Apple FoundationModels) ─── */}
+        {foundationCapable && (
+          <>
+            <Text style={SECTION_H}>System AI</Text>
+            <Text style={SECTION_P}>
+              Apple Intelligence runs in the OS — no download, no network. Available on iOS 18+ devices that support it.
+            </Text>
+            <View style={{ marginHorizontal: 16, marginBottom: 14, backgroundColor: MEO.card, borderRadius: 14, borderWidth: 1, borderColor: MEO.paperEdge, overflow: 'hidden' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: foundationAvailable ? MEO.accent : MEO.ink3 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: MEO.ink, fontFamily: FONT_SANS }}>Apple Intelligence</Text>
+                  <Text style={{ fontSize: 11, color: MEO.ink3, marginTop: 1, fontFamily: FONT_SANS }}>
+                    {foundationAvailable ? 'Ready · iOS 18+' : 'Detected on this OS, native bridge not yet linked'}
+                  </Text>
+                </View>
+                {foundationAvailable && <Icon.Check size={14} stroke="#3F5A2C" />}
+              </View>
+            </View>
+          </>
+        )}
+
+        {/* ─── Ollama (developer fallback) ─── */}
+        {(ollamaUp === true || ollamaModels.length > 0) && (
+          <>
+            <Text style={SECTION_H}>Ollama (developer)</Text>
+            <Text style={SECTION_P}>
+              Detected an Ollama daemon at localhost:11434. On a real phone this only works when the daemon is reachable on the LAN.
+            </Text>
+            <View style={{ marginHorizontal: 16, marginBottom: 14, backgroundColor: MEO.card, borderRadius: 14, borderWidth: 1, borderColor: MEO.paperEdge, overflow: 'hidden' }}>
+              {ollamaModels.map(m => (
+                <View key={m.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderBottomWidth: 0.5, borderBottomColor: MEO.paperEdge }}>
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: MEO.accent }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: MEO.ink, fontFamily: FONT_SANS }}>{m.name}</Text>
+                    <Text style={{ fontSize: 11, color: MEO.ink3, marginTop: 1, fontFamily: FONT_SANS }}>
+                      {[m.size, m.tag].filter(Boolean).join(' · ')}
+                    </Text>
+                  </View>
+                  <Icon.Check size={14} stroke="#3F5A2C" />
+                </View>
+              ))}
+            </View>
+          </>
         )}
 
         {/* ─── Embeddings ─── */}
         <Text style={SECTION_H}>Embeddings</Text>
         <Text style={SECTION_P}>
-          Power Ask Meo's retrieval. Run locally on this device. v1.0 mobile ships a no-op embedder so BM25 carries retrieval; the real bge-small embedder lands in phase 3.5.
+          Power Ask Meo's retrieval. Run locally on this device. Phase 3.5 ships scaffolding for a real bge-small embedder via onnxruntime-react-native, but the JS bundle still uses the no-op embedder for v1.0 — BM25 carries retrieval. See specs/05-llm-architecture.md §6.1 for the gap.
         </Text>
 
         <View style={{ marginHorizontal: 16, marginBottom: 14, backgroundColor: MEO.card, borderRadius: 14, borderWidth: 1, borderColor: MEO.paperEdge, padding: 14, gap: 8 }}>
@@ -171,6 +335,13 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+function humanBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
 const SECTION_H = {
   paddingHorizontal: 22, paddingTop: 16, paddingBottom: 4,
   fontSize: 15, fontWeight: '600' as const, color: MEO.ink,
@@ -181,14 +352,11 @@ const SECTION_P = {
   fontSize: 12.5, color: MEO.ink3, lineHeight: 18,
   fontFamily: FONT_SANS,
 };
-const CALLOUT = {
-  marginHorizontal: 16, marginBottom: 12,
-  padding: 12, borderRadius: 8,
-  backgroundColor: MEO.aiSoft,
-  borderWidth: 1, borderColor: '#E8C4B7',
-  flexDirection: 'row' as const, gap: 10, alignItems: 'flex-start' as const,
+const SMALL_BTN = {
+  paddingHorizontal: 12, paddingVertical: 7,
+  borderRadius: 8, borderWidth: 1, borderColor: MEO.paperEdge,
+  backgroundColor: MEO.paper,
 };
-const CALLOUT_TEXT = {
-  flex: 1, fontSize: 12.5, color: '#923524', lineHeight: 18,
-  fontFamily: FONT_SANS,
+const SMALL_BTN_TEXT = {
+  fontSize: 12, fontWeight: '600' as const, color: MEO.ink, fontFamily: FONT_SANS,
 };
