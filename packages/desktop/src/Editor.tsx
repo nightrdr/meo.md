@@ -1,10 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useEditor, EditorContent, type Editor as TipTapEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import type { Note } from '@meo/shared';
+import { ATTACHMENT_URL_PREFIX, MAX_ATTACHMENT_BYTES } from '@meo/shared';
 import { Icon } from './Icon';
 import { SlashMenu } from './SlashMenu';
+import { AttachmentImageExtension, makeAttachmentsClient } from './AttachmentRenderer';
 
 interface Props {
   note: Note;
@@ -25,17 +27,95 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
   const [mode, setMode] = useState<EditorMode>('edit');
   const [tagInput, setTagInput] = useState('');
   const [showTagInput, setShowTagInput] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<{ kind: 'idle' } | { kind: 'busy'; filename: string } | { kind: 'error'; message: string }>({ kind: 'idle' });
+  const [dropActive, setDropActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const editor = useEditor({
     extensions: [
+      // Disable any built-in image so our AttachmentImageExtension owns the
+      // 'image' name. (StarterKit doesn't include images by default at the
+      // time of this writing, but be defensive.)
       StarterKit.configure({}),
       Placeholder.configure({ placeholder: 'Start writing in markdown' }),
+      AttachmentImageExtension,
     ],
     content: htmlFromMarkdown(note.body),
     onUpdate: ({ editor }) => {
       onChange({ ...note, body: markdownFromHtml(editor.getHTML()) });
     },
   });
+
+  const noteId = note.id;
+  const handleAttachmentFiles = useCallback(async (files: FileList | File[]) => {
+    const list = Array.from(files);
+    if (list.length === 0 || !editor) return;
+    const client = makeAttachmentsClient();
+    if (!client) {
+      setUploadStatus({ kind: 'error', message: 'Sign in to upload attachments' });
+      return;
+    }
+    for (const file of list) {
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        setUploadStatus({
+          kind: 'error',
+          message: `${file.name} is larger than ${(MAX_ATTACHMENT_BYTES / 1024 / 1024).toFixed(0)} MiB`,
+        });
+        continue;
+      }
+      setUploadStatus({ kind: 'busy', filename: file.name });
+      try {
+        const arrayBuf = await file.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuf);
+        const dimensions = await readImageDimensions(file).catch(() => undefined);
+        const result = await client.upload(noteId, {
+          bytes,
+          filename: file.name || 'attachment',
+          mimeType: file.type || 'application/octet-stream',
+          dimensions,
+        });
+        const attachmentUrl = `${ATTACHMENT_URL_PREFIX}${result.id}`;
+        const isImage = (file.type || '').startsWith('image/');
+        if (isImage) {
+          editor.chain().focus().insertContent({
+            type: 'image',
+            attrs: {
+              src: attachmentUrl,
+              alt: file.name,
+              'data-attachment-id': result.id,
+            },
+          }).run();
+        } else {
+          // For non-image attachments, drop a markdown-style link so the
+          // editor body still round-trips.
+          editor.chain().focus().insertContent(`[${file.name}](${attachmentUrl})`).run();
+        }
+        setUploadStatus({ kind: 'idle' });
+      } catch (e: any) {
+        console.error('attachment upload failed', e);
+        setUploadStatus({ kind: 'error', message: String(e?.message ?? e) });
+      }
+    }
+  }, [editor, noteId]);
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDropActive(false);
+    if (e.dataTransfer?.files?.length) {
+      void handleAttachmentFiles(e.dataTransfer.files);
+    }
+  }, [handleAttachmentFiles]);
+
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer?.types?.includes?.('Files')) {
+      e.preventDefault();
+      setDropActive(true);
+    }
+  }, []);
+
+  const onDragLeave = useCallback((e: React.DragEvent) => {
+    if (e.currentTarget === e.target) setDropActive(false);
+  }, []);
 
   useEffect(() => {
     if (!editor) return;
@@ -92,9 +172,30 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
         />
       </div>
 
-      <Toolbar editor={editor} mode={mode} setMode={setMode} />
+      <Toolbar
+        editor={editor}
+        mode={mode}
+        setMode={setMode}
+        onPickAttachment={() => fileInputRef.current?.click()}
+      />
 
-      <div className={`editor-body ${mode === 'split' ? 'split' : ''}`}>
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          if (e.target.files) void handleAttachmentFiles(e.target.files);
+          e.target.value = '';
+        }}
+      />
+
+      <div
+        className={`editor-body ${mode === 'split' ? 'split' : ''}${dropActive ? ' drop-active' : ''}`}
+        onDrop={onDrop}
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+      >
         {mode === 'split' && (
           <pre className="editor-source">{note.body || ' '}</pre>
         )}
@@ -146,6 +247,23 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
         </div>
       </div>
 
+      {uploadStatus.kind !== 'idle' && (
+        <div className={`upload-banner ${uploadStatus.kind}`}>
+          {uploadStatus.kind === 'busy'
+            ? `Encrypting and uploading ${uploadStatus.filename}…`
+            : `Upload error: ${uploadStatus.message}`}
+          {uploadStatus.kind === 'error' && (
+            <button
+              type="button"
+              className="upload-banner-dismiss"
+              onClick={() => setUploadStatus({ kind: 'idle' })}
+            >
+              <Icon.X size={10} />
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="statusbar">
         <span>
           <span className={`dot ${status === 'idle' ? 'ok' : status === 'error' ? 'err' : 'syncing'}`}>●</span>{' '}
@@ -161,9 +279,12 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
 }
 
 function Toolbar({
-  editor, mode, setMode,
+  editor, mode, setMode, onPickAttachment,
 }: {
-  editor: TipTapEditor | null; mode: EditorMode; setMode: (m: EditorMode) => void;
+  editor: TipTapEditor | null;
+  mode: EditorMode;
+  setMode: (m: EditorMode) => void;
+  onPickAttachment: () => void;
 }) {
   if (!editor) return <div className="editor-toolbar" style={{ height: 41 }} />;
 
@@ -252,12 +373,8 @@ function Toolbar({
           if (!url) return;
           editor.chain().focus().insertContent(`[${editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to) || 'link'}](${url})`).run();
         }} />
-      <Btn icon={<Icon.Image size={14} />} label="Image (paste URL)"
-        onClick={() => {
-          const url = prompt('Image URL');
-          if (!url) return;
-          editor.chain().focus().insertContent(`![](${url})`).run();
-        }} />
+      <Btn icon={<Icon.Image size={14} />} label="Insert image / file (encrypted upload)"
+        onClick={onPickAttachment} />
       <Btn icon={<Icon.Code size={14} />} label="Inline code"
         active={editor.isActive('code')}
         onClick={() => editor.chain().focus().toggleCode().run()} />
@@ -310,6 +427,26 @@ function Toolbar({
 
 // --- markdown ↔ HTML translators ---
 
+// Read the natural dimensions of an image file. Returns undefined for
+// non-images / failures (e.g. PDF, generic binary). Used for attachment
+// metadata so the renderer can pre-size before bytes finish decrypting.
+async function readImageDimensions(file: File): Promise<{ width: number; height: number } | undefined> {
+  if (!(file.type || '').startsWith('image/')) return undefined;
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve(undefined);
+    };
+    img.src = url;
+  });
+}
+
 function htmlFromMarkdown(md: string): string {
   if (!md) return '';
   const lines = md.split('\n');
@@ -353,11 +490,44 @@ function htmlFromMarkdown(md: string): string {
 }
 
 function inline(s: string): string {
-  return escapeHtml(s)
+  // First extract image references so escapeHtml doesn't mangle them.
+  // We use a placeholder strategy: replace ![alt](url) with a unique token,
+  // run the rest of inline formatting, then re-insert as raw <img> tags.
+  const imgs: { alt: string; src: string }[] = [];
+  let idx = 0;
+  const withImgPlaceholders = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt: string, src: string) => {
+    imgs.push({ alt, src });
+    return ` IMG${idx++}`;
+  });
+  const links: { text: string; href: string }[] = [];
+  let lidx = 0;
+  const withLinks = withImgPlaceholders.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text: string, href: string) => {
+    links.push({ text, href });
+    return ` LNK${lidx++}`;
+  });
+  let html = escapeHtml(withLinks)
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
     .replace(/~~([^~]+)~~/g, '<s>$1</s>');
+  // Re-insert images
+  html = html.replace(/ IMG(\d+)/g, (_m, i: string) => {
+    const it = imgs[Number(i)];
+    const dataId = it.src.startsWith('attachment:')
+      ? ` data-attachment-id="${it.src.slice('attachment:'.length)}"`
+      : '';
+    return `<img src="${escapeAttr(it.src)}" alt="${escapeAttr(it.alt)}"${dataId}>`;
+  });
+  // Re-insert links
+  html = html.replace(/ LNK(\d+)/g, (_m, i: string) => {
+    const it = links[Number(i)];
+    return `<a href="${escapeAttr(it.href)}">${escapeHtml(it.text)}</a>`;
+  });
+  return html;
+}
+
+function escapeAttr(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function escapeHtml(s: string): string {
@@ -401,6 +571,21 @@ function walk(node: Node): string {
     case 'li': return inner.trim();
     case 'hr': return `\n---\n`;
     case 'br': return `\n`;
+    case 'img': {
+      // Prefer the data-attachment-id roundtrip when present so the
+      // markdown form survives even if the renderer rewrote `src` to a
+      // blob URL.
+      const id = (el as HTMLImageElement).getAttribute('data-attachment-id');
+      const alt = (el as HTMLImageElement).getAttribute('alt') ?? '';
+      const src = id
+        ? `attachment:${id}`
+        : ((el as HTMLImageElement).getAttribute('src') ?? '');
+      return `![${alt}](${src})`;
+    }
+    case 'a': {
+      const href = (el as HTMLAnchorElement).getAttribute('href') ?? '';
+      return `[${inner}](${href})`;
+    }
     default: return inner;
   }
 }
