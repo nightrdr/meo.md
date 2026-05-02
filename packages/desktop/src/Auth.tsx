@@ -1,21 +1,47 @@
+// Authentication UI — email-OTP flow.
+//
+// Modes (linear progression, no back-step needed since each gates the next):
+//
+//   email   → user types email; we send a 6-digit code via Supabase GoTrue
+//   otp     → user enters the code; on success we get a JWT and check
+//             has_account; new users go to setup, returning users go to unlock
+//   setup   → new user picks an encryption passphrase; we generate the
+//             Secret Key on-device, wrap the master key, upload the wrapper
+//   showSecret → display the just-generated Secret Key; user copies it
+//   unlock  → returning user enters passphrase + Secret Key; we decrypt
+//             the master key and hand a Session to the app shell
+//
+// Crypto note: OTP only authenticates the *account* (yields a JWT for
+// the server). The encryption layer is independent — passphrase + Secret
+// Key are still required to derive the master key. The server never
+// sees either.
+
 import React, { useState, useRef } from 'react';
 import {
   setupNewAccount, unlockAccount, formatSecretKey, parseSecretKey,
+  humanizeAuthError,
 } from '@meo/shared';
 import { setMeta } from './storage';
-import { makeApiClient, type Session } from './session';
+import { makeApiClient, supabaseUrl, type Session } from './session';
 import { MeoMark, Icon } from './Icon';
 
-type Mode = 'login' | 'signup' | 'showSecret' | 'unlock';
+type Mode = 'email' | 'otp' | 'setup' | 'showSecret' | 'unlock';
 
 interface Props {
   onAuthenticated: (s: Session) => void;
 }
 
+// Inbucket / Mailpit catches outgoing email when running against a
+// local self-hosted Supabase. Show a tip in the OTP screen so devs
+// don't have to hunt for it.
+const isLocalSupabase =
+  /127\.0\.0\.1|localhost/i.test(supabaseUrl);
+const localInboxUrl = 'http://127.0.0.1:54324';
+
 export function AuthScreen({ onAuthenticated }: Props) {
-  const [mode, setMode] = useState<Mode>('login');
+  const [mode, setMode] = useState<Mode>('email');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
   const [passphrase, setPassphrase] = useState('');
   const [secretKeyInput, setSecretKeyInput] = useState('');
   const [pendingSecretKey, setPendingSecretKey] = useState<Uint8Array | null>(null);
@@ -23,50 +49,69 @@ export function AuthScreen({ onAuthenticated }: Props) {
   const [pendingUserId, setPendingUserId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
-  // Stable api instance across renders (supabase-js holds session state).
+  // Stable api instance across renders — supabase-js holds session state.
   const apiRef = useRef<ReturnType<typeof makeApiClient> | null>(null);
   if (!apiRef.current) apiRef.current = makeApiClient();
   const api = apiRef.current;
 
+  // ── Centralized error handler — turns any thrown API/auth/network
+  //    error into the most helpful sentence we can manage. ──
   function handleErr(e: unknown) {
-    setError(e instanceof Error ? e.message : String(e));
+    setError(humanizeAuthError(e));
     setBusy(false);
   }
 
-  async function handleLogin(e: React.FormEvent) {
+  // ── Step 1: send the OTP code ──
+  async function handleRequestOtp(e: React.FormEvent) {
     e.preventDefault();
-    setError(null); setBusy(true);
+    setError(null); setInfo(null); setBusy(true);
     try {
-      const r = await api.login(email, password);
-      await setMeta({ jwt: r.jwt, user_id: r.user_id, email });
-      setPendingJwt(r.jwt);
-      setPendingUserId(r.user_id);
-      if (!r.has_account) setMode('signup');
-      else setMode('unlock');
+      if (!('requestEmailOtp' in api)) {
+        throw new Error('Email-OTP login is not available on this backend.');
+      }
+      await (api as any).requestEmailOtp(email);
+      setMode('otp');
+      setInfo(`We sent a 6-digit code to ${email}.`);
+      setOtp('');
     } catch (e) { handleErr(e); }
     setBusy(false);
   }
 
-  async function handleSignup(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null); setBusy(true);
+  async function handleResendOtp() {
+    setError(null); setInfo(null); setBusy(true);
     try {
-      await api.signup(email, password);
-      const r = await api.login(email, password);
-      await setMeta({ jwt: r.jwt, user_id: r.user_id, email });
-      setPendingJwt(r.jwt);
-      setPendingUserId(r.user_id);
-      setMode('signup');
+      await (api as any).requestEmailOtp(email);
+      setInfo(`A new code has been sent to ${email}.`);
     } catch (e) { handleErr(e); }
     setBusy(false);
   }
 
+  // ── Step 2: verify the OTP, then route to setup or unlock ──
+  async function handleVerifyOtp(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null); setInfo(null); setBusy(true);
+    try {
+      if (!('verifyEmailOtp' in api)) {
+        throw new Error('Email-OTP login is not available on this backend.');
+      }
+      const code = otp.trim().replace(/\s+/g, '');
+      const r = await (api as any).verifyEmailOtp(email, code);
+      await setMeta({ jwt: r.jwt, user_id: r.user_id, email });
+      setPendingJwt(r.jwt);
+      setPendingUserId(r.user_id);
+      setMode(r.has_account ? 'unlock' : 'setup');
+    } catch (e) { handleErr(e); }
+    setBusy(false);
+  }
+
+  // ── Step 3a (new user): pick a passphrase, generate Secret Key ──
   async function handleSetupEncryption(e: React.FormEvent) {
     e.preventDefault();
     setError(null); setBusy(true);
     try {
-      if (!pendingJwt) throw new Error('no pending session');
+      if (!pendingJwt) throw new Error('Session expired. Sign in again.');
       const setup = await setupNewAccount(passphrase);
       setPendingSecretKey(setup.secretKey);
       api.setJwt(pendingJwt);
@@ -82,11 +127,12 @@ export function AuthScreen({ onAuthenticated }: Props) {
     setBusy(false);
   }
 
+  // ── Step 3b (returning user): unlock with passphrase + Secret Key ──
   async function handleUnlock(e: React.FormEvent) {
     e.preventDefault();
     setError(null); setBusy(true);
     try {
-      if (!pendingJwt || !pendingUserId) throw new Error('no jwt');
+      if (!pendingJwt || !pendingUserId) throw new Error('Session expired. Sign in again.');
       api.setJwt(pendingJwt);
       const wrapper = await api.getAccount();
       const sk = parseSecretKey(secretKeyInput);
@@ -97,8 +143,8 @@ export function AuthScreen({ onAuthenticated }: Props) {
         hlc: { ms: Date.now(), counter: 0 },
       };
       onAuthenticated(session);
-    } catch (e) {
-      handleErr(new Error('Unlock failed: passphrase or Secret Key is wrong'));
+    } catch {
+      handleErr(new Error('Couldn\'t unlock — check your passphrase and Secret Key.'));
     }
     setBusy(false);
   }
@@ -110,7 +156,7 @@ export function AuthScreen({ onAuthenticated }: Props) {
     onAuthenticated(session);
   }
 
-  // ---- render ----
+  // ────────────────────────────────────────────────────────────────────
 
   const Brand = () => (
     <div className="auth-brand">
@@ -119,28 +165,38 @@ export function AuthScreen({ onAuthenticated }: Props) {
     </div>
   );
 
-  if (mode === 'login') {
+  const Notices = () => (
+    <>
+      {info && <div className="info">{info}</div>}
+      {error && <div className="error">{error}</div>}
+    </>
+  );
+
+  if (mode === 'email') {
     return (
       <div className="auth-wrap">
         <div>
           <Brand />
           <div className="auth-card">
-            <h1>Welcome back</h1>
-            <p className="sub">Sign in to your end-to-end encrypted notes.</p>
-            <form onSubmit={handleLogin}>
+            <h1>Sign in</h1>
+            <p className="sub">We'll email you a 6-digit code. No password needed.</p>
+            <form onSubmit={handleRequestOtp}>
               <label>Email</label>
-              <input type="email" required value={email} onChange={e => setEmail(e.target.value)} autoFocus autoComplete="email" />
-              <label>Account password</label>
-              <input type="password" required value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" />
-              {error && <div className="error">{error}</div>}
+              <input
+                type="email" required value={email}
+                onChange={e => setEmail(e.target.value)}
+                autoFocus autoComplete="email"
+                placeholder="you@example.com"
+              />
+              <Notices />
               <div className="actions">
-                <button className="btn primary" disabled={busy} type="submit" style={{ flex: 1 }}>
-                  {busy ? 'Signing in…' : 'Sign in'}
+                <button className="btn primary" disabled={busy || !email} type="submit" style={{ flex: 1 }}>
+                  {busy ? 'Sending…' : 'Send code'}
                 </button>
               </div>
             </form>
-            <div className="switch">
-              New to Meo? <a onClick={() => { setMode('signup'); setError(null); setPendingJwt(null); }}>Create an account</a>
+            <div className="switch" style={{ color: 'var(--ink3)', fontSize: 12 }}>
+              First time? The same flow signs you up.
             </div>
           </div>
         </div>
@@ -148,49 +204,74 @@ export function AuthScreen({ onAuthenticated }: Props) {
     );
   }
 
-  if (mode === 'signup' && !pendingJwt) {
+  if (mode === 'otp') {
     return (
       <div className="auth-wrap">
         <div>
           <Brand />
           <div className="auth-card">
-            <h1>Create your Meo</h1>
-            <p className="sub">The account password lets you sign in. Next: an encryption passphrase that <strong>the server never sees</strong>.</p>
-            <form onSubmit={handleSignup}>
-              <label>Email</label>
-              <input type="email" required value={email} onChange={e => setEmail(e.target.value)} autoFocus autoComplete="email" />
-              <label>Account password (min 8 chars)</label>
-              <input type="password" required minLength={8} value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" />
-              {error && <div className="error">{error}</div>}
+            <h1>Enter code</h1>
+            <p className="sub">
+              Sent to <strong>{email}</strong>.{' '}
+              <a onClick={() => { setMode('email'); setError(null); setInfo(null); setOtp(''); }}>Wrong email?</a>
+            </p>
+            <form onSubmit={handleVerifyOtp}>
+              <label>6-digit code</label>
+              <input
+                type="text" inputMode="numeric" pattern="\d*" maxLength={6}
+                required value={otp}
+                onChange={e => setOtp(e.target.value.replace(/\D/g, ''))}
+                autoFocus autoComplete="one-time-code"
+                className="otp-input"
+                placeholder="000000"
+              />
+              <Notices />
+              {isLocalSupabase && (
+                <div className="hint">
+                  Dev tip: codes appear in Mailpit at{' '}
+                  <a href={localInboxUrl} target="_blank" rel="noreferrer">{localInboxUrl}</a>
+                </div>
+              )}
               <div className="actions">
-                <button className="btn primary" disabled={busy} type="submit" style={{ flex: 1 }}>
-                  {busy ? '…' : 'Continue'}
+                <button className="btn primary" disabled={busy || otp.length < 6} type="submit" style={{ flex: 1 }}>
+                  {busy ? 'Verifying…' : 'Verify'}
+                </button>
+                <button type="button" className="btn" disabled={busy} onClick={handleResendOtp}>
+                  Resend
                 </button>
               </div>
             </form>
-            <div className="switch">
-              Already have an account? <a onClick={() => { setMode('login'); setError(null); }}>Sign in</a>
-            </div>
           </div>
         </div>
       </div>
     );
   }
 
-  if (mode === 'signup' && pendingJwt) {
+  if (mode === 'setup') {
     return (
       <div className="auth-wrap">
         <div>
           <Brand />
           <div className="auth-card">
             <h1>Encryption passphrase</h1>
-            <p className="sub">This unlocks your notes locally. <strong>The server never sees it.</strong> If you forget it AND lose your Secret Key, your notes are unrecoverable. That is the privacy guarantee.</p>
+            <p className="sub">
+              This unlocks your notes locally. <strong>The server never sees it.</strong>{' '}
+              If you forget it AND lose your Secret Key, your notes are unrecoverable.
+              That is the privacy guarantee.
+            </p>
             <form onSubmit={handleSetupEncryption}>
-              <label><Icon.Lock size={11} style={{ verticalAlign: -1, marginRight: 4 }} /> Passphrase</label>
-              <input type="password" required minLength={8} value={passphrase} onChange={e => setPassphrase(e.target.value)} autoFocus autoComplete="new-password" />
-              {error && <div className="error">{error}</div>}
+              <label>
+                <Icon.Lock size={11} style={{ verticalAlign: -1, marginRight: 4 }} />
+                Passphrase (min 8 chars)
+              </label>
+              <input
+                type="password" required minLength={8} value={passphrase}
+                onChange={e => setPassphrase(e.target.value)}
+                autoFocus autoComplete="new-password"
+              />
+              <Notices />
               <div className="actions">
-                <button className="btn primary" disabled={busy} type="submit" style={{ flex: 1 }}>
+                <button className="btn primary" disabled={busy || passphrase.length < 8} type="submit" style={{ flex: 1 }}>
                   {busy ? 'Setting up…' : 'Set up encryption'}
                 </button>
               </div>
@@ -208,13 +289,22 @@ export function AuthScreen({ onAuthenticated }: Props) {
           <Brand />
           <div className="auth-card">
             <h1>Save your Secret Key</h1>
-            <p className="sub">You'll need this Secret Key alongside your passphrase to unlock notes on a new device. Save it somewhere safe. <strong>We cannot recover it.</strong></p>
+            <p className="sub">
+              You'll need this Secret Key alongside your passphrase to unlock notes on a new device.
+              Save it somewhere safe. <strong>We cannot recover it.</strong>
+            </p>
             <div className="secret-display">{pendingSecretKey ? formatSecretKey(pendingSecretKey) : ''}</div>
-            <button className="btn" style={{ width: '100%' }} onClick={() => navigator.clipboard.writeText(pendingSecretKey ? formatSecretKey(pendingSecretKey) : '')}>
+            <button
+              className="btn"
+              style={{ width: '100%' }}
+              onClick={() => navigator.clipboard.writeText(pendingSecretKey ? formatSecretKey(pendingSecretKey) : '')}
+            >
               <Icon.Copy size={12} style={{ verticalAlign: -1, marginRight: 6 }} /> Copy to clipboard
             </button>
             <div className="actions" style={{ marginTop: 24 }}>
-              <button className="btn primary" onClick={continuePastSecret} style={{ flex: 1 }}>I've saved it, continue</button>
+              <button className="btn primary" onClick={continuePastSecret} style={{ flex: 1 }}>
+                I've saved it, continue
+              </button>
             </div>
           </div>
         </div>
@@ -232,7 +322,11 @@ export function AuthScreen({ onAuthenticated }: Props) {
             <p className="sub">Enter your encryption passphrase and Secret Key to decrypt your notes.</p>
             <form onSubmit={handleUnlock}>
               <label>Passphrase</label>
-              <input type="password" required value={passphrase} onChange={e => setPassphrase(e.target.value)} autoFocus autoComplete="current-password" />
+              <input
+                type="password" required value={passphrase}
+                onChange={e => setPassphrase(e.target.value)}
+                autoFocus autoComplete="current-password"
+              />
               <label>Secret Key</label>
               <input
                 value={secretKeyInput}
@@ -241,7 +335,7 @@ export function AuthScreen({ onAuthenticated }: Props) {
                 style={{ fontFamily: 'var(--font-mono)', letterSpacing: 0.4 }}
                 autoComplete="off"
               />
-              {error && <div className="error">{error}</div>}
+              <Notices />
               <div className="actions">
                 <button className="btn primary" disabled={busy} type="submit" style={{ flex: 1 }}>
                   {busy ? 'Unlocking…' : 'Unlock'}

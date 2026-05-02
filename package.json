@@ -2,10 +2,10 @@
   "name": "meo.md",
   "version": "0.1.0",
   "private": true,
-  "workspaces": ["packages/shared", "packages/backend", "packages/desktop"],
+  "workspaces": ["packages/shared", "packages/desktop"],
   "scripts": {
-    "dev:backend": "npm --workspace @meo/backend run dev",
+    "dev:backend": "make -C packages/backend dev",
     "dev:desktop": "npm --workspace @meo/desktop run dev",
-    "build": "npm --workspace @meo/shared run build && npm --workspace @meo/backend run build && npm --workspace @meo/desktop run build"
+    "build": "npm --workspace @meo/shared run build && make -C packages/backend build && npm --workspace @meo/desktop run build"
   }
 }

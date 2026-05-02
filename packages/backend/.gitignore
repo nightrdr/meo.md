@@ -1,0 +1,5 @@
+/bin/
+/meo*.sqlite
+/meo*.sqlite-wal
+/meo*.sqlite-shm
+.e2e.pid

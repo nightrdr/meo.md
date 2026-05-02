@@ -12,13 +12,14 @@
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
-  View, Text, ScrollView, Pressable, ActivityIndicator, Alert,
+  View, Text, ScrollView, Pressable, ActivityIndicator, Alert, Switch,
 } from 'react-native';
 import { router } from 'expo-router';
 import { ai as A } from '../../src/shared';
 import type { Model } from '../../src/shared/ai/types';
 import { getSession } from '../../src/store';
-import { peekAIRuntime, getAIRuntime } from '../../src/aiStore';
+import { peekAIRuntime, getAIRuntime, clearAIRuntime } from '../../src/aiStore';
+import { getUseRealEmbedder, setUseRealEmbedder } from '../../src/aiSettings';
 import { MEO, FONT_SANS, FONT_SERIF } from '../../src/theme';
 import { Icon } from '../../src/Icon';
 
@@ -27,6 +28,12 @@ interface DownloadState {
   written: number;
   total: number;
   abort: AbortController;
+}
+
+interface EmbedderDownloadState {
+  filename: string;
+  written: number;
+  total: number;
 }
 
 export default function AISettingsScreen() {
@@ -40,6 +47,9 @@ export default function AISettingsScreen() {
   const downloadRef = useRef<DownloadState | null>(null);
   const [indexed, setIndexed] = useState<{ done: number; total: number } | null>(null);
   const [reindexing, setReindexing] = useState(false);
+  const [embedderFiles, setEmbedderFiles] = useState<{ ready: boolean; onnxBytes?: number; vocabBytes?: number }>({ ready: false });
+  const [embedderDl, setEmbedderDl] = useState<EmbedderDownloadState | null>(null);
+  const [useReal, setUseRealLocal] = useState(false);
 
   // Refresh: probe ollama, foundation models, and which GGUFs are on disk.
   const refresh = useCallback(async () => {
@@ -56,6 +66,14 @@ export default function AISettingsScreen() {
       if (await A.isModelInstalled(id)) present.add(id);
     }
     setInstalled(present);
+
+    const status = await A.getEmbedderFileStatus();
+    setEmbedderFiles({
+      ready: status.ready,
+      onnxBytes: status.onnx.bytes,
+      vocabBytes: status.vocab.bytes,
+    });
+    setUseRealLocal(await getUseRealEmbedder());
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
@@ -125,6 +143,60 @@ export default function AISettingsScreen() {
       ],
     );
   }, [refresh]);
+
+  const downloadEmbedder = useCallback(async () => {
+    setEmbedderDl({ filename: 'preparing…', written: 0, total: 0 });
+    try {
+      await A.downloadEmbedderFiles((p) => {
+        setEmbedderDl({ filename: p.filename, written: p.bytesWritten, total: p.totalBytes });
+      });
+      Alert.alert('Embedder ready', 'bge-small-en-v1.5 files installed. Toggle "Use real embedder" to enable.');
+      await refresh();
+    } catch (e: any) {
+      Alert.alert('Embedder download failed', e?.message ?? String(e));
+    } finally {
+      setEmbedderDl(null);
+    }
+  }, [refresh]);
+
+  const removeEmbedder = useCallback(() => {
+    Alert.alert(
+      'Remove embedder files?',
+      'Delete the bge-small ONNX model + vocab. The Use real embedder switch will turn back off.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove', style: 'destructive', onPress: async () => {
+            await A.deleteEmbedderFiles();
+            await setUseRealEmbedder(false);
+            clearAIRuntime();
+            await refresh();
+          },
+        },
+      ],
+    );
+  }, [refresh]);
+
+  const toggleRealEmbedder = useCallback(async (next: boolean) => {
+    if (next && !embedderFiles.ready) {
+      Alert.alert('Files missing', 'Tap Install bge-small first.');
+      return;
+    }
+    setUseRealLocal(next);
+    await setUseRealEmbedder(next);
+    // Drop cached runtime so the next AI call picks up the new embedder.
+    clearAIRuntime();
+    if (session) {
+      // Re-index — vec_hash will mismatch (different embedder_id), so all
+      // notes get re-embedded with the new model.
+      setReindexing(true);
+      try {
+        const rt = await getAIRuntime();
+        await rt.vectorStore.clear();
+        await rt.rebuild(session.notes, (done, total) => setIndexed({ done, total }));
+      } finally { setReindexing(false); }
+    }
+  }, [embedderFiles.ready, session]);
 
   const forceReindex = async () => {
     if (!session) return;
@@ -271,11 +343,11 @@ export default function AISettingsScreen() {
         {/* ─── Embeddings ─── */}
         <Text style={SECTION_H}>Embeddings</Text>
         <Text style={SECTION_P}>
-          Power Ask Meo's retrieval. Run locally on this device. Phase 3.5 ships scaffolding for a real bge-small embedder via onnxruntime-react-native, but the JS bundle still uses the no-op embedder for v1.0 — BM25 carries retrieval. See specs/05-llm-architecture.md §6.1 for the gap.
+          Power Ask Meo's retrieval. Two modes: (a) the no-op embedder ships in the bundle and lets BM25 carry retrieval (default, recommended for v1.0). (b) bge-small-en-v1.5 via onnxruntime-react-native — 384-dim vectors, ~33 MB ONNX + 250 KB vocab, downloaded on demand.
         </Text>
 
-        <View style={{ marginHorizontal: 16, marginBottom: 14, backgroundColor: MEO.card, borderRadius: 14, borderWidth: 1, borderColor: MEO.paperEdge, padding: 14, gap: 8 }}>
-          <Row label="Model" value={(peekAIRuntime()?.embedder.id) || 'noop'} />
+        <View style={{ marginHorizontal: 16, marginBottom: 14, backgroundColor: MEO.card, borderRadius: 14, borderWidth: 1, borderColor: MEO.paperEdge, padding: 14, gap: 10 }}>
+          <Row label="Active model" value={(peekAIRuntime()?.embedder.id) || 'noop'} />
           <Row label="Embeds" value="title + body + tags + folder" />
           <Row
             label="Indexed"
@@ -290,6 +362,64 @@ export default function AISettingsScreen() {
               }} />
             </View>
           )}
+
+          {/* bge-small files row */}
+          <View style={{ height: 1, backgroundColor: MEO.paperEdge, marginVertical: 4 }} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: embedderFiles.ready ? MEO.accent : MEO.ink3 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: MEO.ink, fontFamily: FONT_SANS }}>bge-small-en-v1.5</Text>
+              <Text style={{ fontSize: 11, color: MEO.ink3, marginTop: 1, fontFamily: FONT_SANS }}>
+                {embedderFiles.ready
+                  ? `Installed · ${humanBytes((embedderFiles.onnxBytes ?? 0) + (embedderFiles.vocabBytes ?? 0))}`
+                  : 'Not installed · ~33 MB download'}
+              </Text>
+              {embedderDl && (
+                <View style={{ marginTop: 6, gap: 4 }}>
+                  <View style={{ height: 4, backgroundColor: 'rgba(31,28,23,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+                    <View style={{
+                      height: 4, backgroundColor: MEO.accent,
+                      width: embedderDl.total > 0 ? `${Math.min(100, (embedderDl.written / embedderDl.total) * 100)}%` : '5%',
+                    }} />
+                  </View>
+                  <Text style={{ fontSize: 10.5, color: MEO.ink3, fontFamily: 'Menlo' }}>
+                    {embedderDl.filename} · {humanBytes(embedderDl.written)}{embedderDl.total ? ` / ${humanBytes(embedderDl.total)}` : ''}
+                  </Text>
+                </View>
+              )}
+            </View>
+            {embedderFiles.ready ? (
+              <Pressable onPress={removeEmbedder} style={SMALL_BTN}>
+                <Text style={SMALL_BTN_TEXT}>Remove</Text>
+              </Pressable>
+            ) : embedderDl ? (
+              <View style={SMALL_BTN}><ActivityIndicator size="small" color={MEO.ink2} /></View>
+            ) : (
+              <Pressable onPress={downloadEmbedder} style={SMALL_BTN}>
+                <Text style={SMALL_BTN_TEXT}>Install</Text>
+              </Pressable>
+            )}
+          </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
+            <Switch
+              value={useReal}
+              disabled={!embedderFiles.ready || reindexing}
+              onValueChange={toggleRealEmbedder}
+              trackColor={{ false: MEO.paperEdge, true: MEO.accent }}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: MEO.ink, fontFamily: FONT_SANS }}>
+                Use real embedder
+              </Text>
+              <Text style={{ fontSize: 11, color: MEO.ink3, marginTop: 1, fontFamily: FONT_SANS }}>
+                {embedderFiles.ready
+                  ? 'Re-indexes all notes when toggled.'
+                  : 'Install bge-small first.'}
+              </Text>
+            </View>
+          </View>
+
           <Pressable
             onPress={forceReindex}
             disabled={reindexing}

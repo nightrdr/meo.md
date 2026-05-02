@@ -1,15 +1,12 @@
-import Database from 'better-sqlite3';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+package store
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = process.env.MEO_DB_PATH ?? path.join(__dirname, '..', 'meo.sqlite');
+import "database/sql"
 
-export const db = new Database(dbPath);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
-
-db.exec(`
+// schema mirrors packages/backend/src/db.ts exactly so the same
+// meo.sqlite file is forward- and backward-compatible between the TS
+// and Go servers. Adding a column? Add a migration here, don't edit
+// these statements.
+const schema = `
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,
@@ -43,15 +40,9 @@ CREATE TABLE IF NOT EXISTS sync_cursor (
   user_id TEXT PRIMARY KEY,
   next_version INTEGER NOT NULL DEFAULT 1
 );
-`);
+`
 
-export function nextVersionFor(userId: string): number {
-  const row = db.prepare('SELECT next_version FROM sync_cursor WHERE user_id = ?').get(userId) as { next_version: number } | undefined;
-  if (!row) {
-    db.prepare('INSERT INTO sync_cursor (user_id, next_version) VALUES (?, 2)').run(userId);
-    return 1;
-  }
-  const v = row.next_version;
-  db.prepare('UPDATE sync_cursor SET next_version = ? WHERE user_id = ?').run(v + 1, userId);
-  return v;
+func migrate(db *sql.DB) error {
+	_, err := db.Exec(schema)
+	return err
 }

@@ -20,37 +20,45 @@
 import { Platform } from 'react-native';
 import type { Generator, Model, GenerateOptions, GenerateChunk } from '../types';
 
-type FoundationLLMModule = {
+// Native bridge contract. The Swift side (modules/foundation-llm/ios/
+// FoundationLLMModule.swift) emits tokens through an `RCTEventEmitter`
+// keyed by `requestId`; we subscribe per-call and tear the listener
+// down when the promise resolves.
+type FoundationLLMNative = {
   isAvailable(): Promise<boolean>;
-  /** Stream a chat completion. Tokens come via the optional callback. */
   complete(opts: {
+    requestId: string;
     messages: { role: string; content: string }[];
     maxTokens?: number;
     temperature?: number;
-  }, onToken?: (delta: string) => void): Promise<{ promptTokens: number; completionTokens: number }>;
+  }): Promise<{ promptTokens: number; completionTokens: number }>;
+};
+
+type FoundationLLMHandle = {
+  module: FoundationLLMNative;
+  emitter: { addListener: (event: string, fn: (e: any) => void) => { remove(): void } };
 };
 
 let modulePresent: boolean | null = null;
-let foundationModule: FoundationLLMModule | null = null;
-function tryLoadFoundationModule(): FoundationLLMModule | null {
-  if (modulePresent !== null) return foundationModule;
+let foundationHandle: FoundationLLMHandle | null = null;
+function tryLoadFoundationModule(): FoundationLLMHandle | null {
+  if (modulePresent !== null) return foundationHandle;
   modulePresent = false;
   try {
-    // The native module name when it ships will be `FoundationLLM`.
-    // It's wrapped via `react-native`'s NativeModules — but we
-    // require it dynamically so the JS bundle still loads on
-    // platforms that don't have it.
+    // Lazy-require react-native so this file still parses in Node-side
+    // tests (test-tokenizer.mjs and friends).
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const RN = require('react-native');
-    const m = RN?.NativeModules?.FoundationLLM as FoundationLLMModule | undefined;
+    const m = RN?.NativeModules?.FoundationLLM as FoundationLLMNative | undefined;
     if (m && typeof m.complete === 'function') {
-      foundationModule = m;
+      const emitter = new RN.NativeEventEmitter(m as any);
+      foundationHandle = { module: m, emitter };
       modulePresent = true;
     }
   } catch {
     /* swallow */
   }
-  return foundationModule;
+  return foundationHandle;
 }
 
 /** True iff this device *could* run Apple FoundationModels (iOS 18+). */
@@ -64,9 +72,9 @@ export function isFoundationModelsCapable(): boolean {
 /** Live availability — capability AND the native module is linked AND the OS reports the model is ready. */
 export async function isFoundationModelsAvailable(): Promise<boolean> {
   if (!isFoundationModelsCapable()) return false;
-  const m = tryLoadFoundationModule();
-  if (!m) return false;
-  try { return await m.isAvailable(); } catch { return false; }
+  const h = tryLoadFoundationModule();
+  if (!h) return false;
+  try { return await h.module.isAvailable(); } catch { return false; }
 }
 
 export class FoundationBackend implements Generator {
@@ -88,8 +96,8 @@ export class FoundationBackend implements Generator {
   }
 
   async *stream(opts: GenerateOptions): AsyncIterable<GenerateChunk> {
-    const m = tryLoadFoundationModule();
-    if (!m) throw new Error('Apple FoundationModels native module is not linked');
+    const h = tryLoadFoundationModule();
+    if (!h) throw new Error('Apple FoundationModels native module is not linked');
 
     type Item =
       | { kind: 'delta'; delta: string }
@@ -106,26 +114,34 @@ export class FoundationBackend implements Generator {
       else resolveNext = resolve;
     });
 
-    m.complete(
-      {
-        messages: opts.messages,
-        maxTokens: opts.maxTokens,
-        temperature: opts.temperature,
-      },
-      (delta) => { if (delta) push({ kind: 'delta', delta }); },
-    ).then(
+    // Generate a unique requestId so concurrent streams don't crosstalk.
+    const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const sub = h.emitter.addListener('FoundationLLMOnToken', (e: { requestId: string; delta: string }) => {
+      if (e.requestId === requestId && e.delta) push({ kind: 'delta', delta: e.delta });
+    });
+
+    h.module.complete({
+      requestId,
+      messages: opts.messages,
+      maxTokens: opts.maxTokens,
+      temperature: opts.temperature,
+    }).then(
       (usage) => push({ kind: 'done', usage }),
       (err: Error) => push({ kind: 'error', error: err }),
     );
 
-    while (true) {
-      const item = await next();
-      if (item.kind === 'error') throw item.error;
-      if (item.kind === 'delta') yield { delta: item.delta };
-      if (item.kind === 'done') {
-        yield { delta: '', done: true, usage: item.usage };
-        return;
+    try {
+      while (true) {
+        const item = await next();
+        if (item.kind === 'error') throw item.error;
+        if (item.kind === 'delta') yield { delta: item.delta };
+        if (item.kind === 'done') {
+          yield { delta: '', done: true, usage: item.usage };
+          return;
+        }
       }
+    } finally {
+      sub.remove();
     }
   }
 }

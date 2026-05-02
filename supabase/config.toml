@@ -223,15 +223,31 @@ otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
 
-# Use a production-ready SMTP server
-# [auth.email.smtp]
-# enabled = true
-# host = "smtp.sendgrid.net"
-# port = 587
-# user = "apikey"
-# pass = "env(SENDGRID_API_KEY)"
-# admin_email = "admin@email.com"
-# sender_name = "Admin"
+# ─── Production SMTP — Resend ────────────────────────────────────────
+#
+# Default (this block COMMENTED): GoTrue routes outbound email to the
+#   bundled Inbucket / Mailpit container at http://127.0.0.1:54324.
+#   Useful in local dev — codes never leave your machine.
+#
+# Enable Resend (for staging / prod):
+#   1. Sign up at resend.com, generate an API key (starts with "re_").
+#   2. Drop the key into `supabase/.env` (gitignored):
+#        RESEND_API_KEY=re_xxxxxxxxxxxxxxxxxxxxxxxx
+#   3. Uncomment the block below.
+#   4. Switch `admin_email` from `onboarding@resend.dev` (the only
+#      sender allowed without DNS verification) to e.g.
+#      `noreply@yourdomain.com` once you've added the SPF / DKIM
+#      records Resend tells you to.
+#   5. `supabase stop && supabase start` to pick up the new config.
+#
+[auth.email.smtp]
+enabled = true
+host = "smtp.resend.com"
+port = 587
+user = "resend"
+pass = "env(RESEND_API_KEY)"
+admin_email = "no-reply@communications.meo.md"
+sender_name = "Meo.md"
 
 # Uncomment to customize email template
 # [auth.email.template.invite]

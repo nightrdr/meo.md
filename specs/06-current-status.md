@@ -25,17 +25,13 @@ like; the others describe what it's becoming.
   │   AI panel + slash menu  ✅    │         │   AI sheet + RAG     ✅ │
   │   Local LLM (Ollama)     ✅    │         │   Local LLM (llama.rn) ✅* │
   │   Embeddings + RAG       ✅    │         │   Retrieval (BM25)   ✅ │
-  │                                │         │   Embeddings (real)⚠ ¹  │
+  │                                │         │   Embeddings (real)  ✅ │
   │   Settings → AI          ✅    │         │   Settings → AI      ✅ │
-  │   Attachments (E2EE)     ✅    │         │   Attachments       ⚠ ² │
+  │   Attachments (E2EE)     ✅    │         │   Attachments        ✅ │
   │   Tauri native window    ✅    │         │   Bare workflow      ✅ │
   └────────────────────────────────┘         └─────────────────────────┘
 
            ✅* runtime + plumbing shipped; needs an iOS simulator or device build
-           ⚠ ¹  embedder runtime installed (onnxruntime-react-native);
-                wiring bge-small + tokenizer is the remaining piece
-           ⚠ ²  shared crypto pipeline is mobile-compatible; only the mobile
-                file-picker UI is missing (small follow-up)
 ```
 
 Both clients talk to a **self-hosted Supabase** (`supabase start`) over
@@ -115,8 +111,15 @@ All four suites are green.
 - **Auth proxy / paid tier billing** (Paddle, per spec §2.6).
 - **AI proxy + `meo.usage_log` table** (per spec §2.5 / `05-llm-architecture.md`
   §14). Ships with the paid tier in v1.1 since cloud LLM keys are gated.
-- **Attachments / iDrive S3 pipeline** (per spec §3.8 / §2.3). Schema +
-  signed-URL Edge Function not yet written.
+
+### Attachments quota
+
+- Workspace-wide quota of 10 GiB enforced **inside** the
+  `meo.attachments_create` SECURITY DEFINER RPC (atomic with the insert,
+  no TOCTOU race).
+- `meo.attachments_quota_used()` returns `(used_bytes, quota_bytes)` so
+  the client can show usage in Settings → Storage.
+- Migration: `supabase/migrations/20260428001000_attachments_quota.sql`.
 
 ---
 
@@ -226,22 +229,20 @@ Within budgets from `05-llm-architecture.md` §10.
 | **`expo prebuild` done** (irreversible — bare workflow, Expo Go gone) | ✅ — `ios/` + `android/` folders generated, gitignored | `packages/mobile/ios/`, `packages/mobile/android/` |
 | **`llama.rn` integration** (RN binding around llama.cpp; Metal on iOS, Vulkan/OpenCL/CPU on Android) | ✅ shipped — `LlamaRnBackend` implements `Generator`; downloads GGUF Q4 quants from Hugging Face Hub on demand via `expo-file-system` | `src/shared/ai/backends/llamaRn.ts` |
 | **`op-sqlite` vector store** (replaces AsyncStorage-backed JSON for scale) | ✅ — schema `note_vectors(note_id, dim, vec, vec_hash, embedder_id)` per spec §6.2 | `src/shared/ai/vectorStore.sqlite.ts` |
-| **Apple FoundationModels backend** (iOS 18+ system LLM, free, no download) | ⚠ JS bridge wired + capability-gated; native Swift Pod (`FoundationLLMModule.swift`) not yet shipped — `isAvailable()` returns false until `NativeModules.FoundationLLM` exists | `src/shared/ai/backends/foundation.ts` |
-| **`onnxruntime-react-native`** runtime for the real bge-small embedder | ⚠ runtime installed + Expo plugin works; the WordPiece tokenizer + ONNX model file are the next step. `NoopEmbedder` remains the default until then (BM25 carries retrieval) | `src/shared/ai/embeddings.ts` |
+| **Apple FoundationModels backend** (iOS 18+ system LLM, free, no download) | ✅ — Swift Pod (`FoundationLLM.podspec` + `FoundationLLMModule.swift`) bridges `LanguageModelSession` to RN via `RCTEventEmitter`. JS side wires `requestId` per call; tokens stream as `FoundationLLMOnToken` events. Linked into Podfile via local `foundation-llm-plugin.js` | `modules/foundation-llm/`, `src/shared/ai/backends/foundation.ts`, `foundation-llm-plugin.js` |
+| **Real bge-small-en-v1.5 embedder** (`onnxruntime-react-native`) | ✅ — `OnnxBgeSmallEmbedder` does mean-pool weighted by attention_mask + L2-normalize, 384-dim output. Pure-JS WordPiece tokenizer (`tokenizer.ts`, 9 self-tests green). 33 MB ONNX + 250 KB vocab download on demand via `expo-file-system`'s `createDownloadResumable`. Toggle in Settings → AI rebuilds the index. `NoopEmbedder` remains the default until the user opts in | `src/shared/ai/embeddings.ts`, `src/shared/ai/tokenizer.ts`, `app/settings/ai.tsx` |
+| **Mobile attachments file + image picker** | ✅ — `expo-image-picker` for camera-roll images (with permission flow + dimensions), `expo-document-picker` for arbitrary files. Upload status banner in the editor toolbar. Cross-platform interop test (mobile noble ↔ desktop Web Crypto) passes 3/3 cases | `app/note/[id].tsx`, `src/attachmentsBridge.ts`, `test-attachments-interop.mjs` |
 
 ### What's still pending on mobile
 
 | Missing | Plan |
 |---|---|
-| **Real bge-small-en-v1.5 embedder** | Runtime is installed (`onnxruntime-react-native`); next step is the WordPiece tokenizer + ONNX file + pooling. ~half day. Until then, `NoopEmbedder` is the default and BM25 carries retrieval. |
-| **FoundationModels Swift Pod** | JS bridge is wired in `backends/foundation.ts`; need a `FoundationLLMModule.swift` exposing `LanguageModelSession` to RN. Then iOS 18+ devices get a free 3 GB-ish model with zero storage cost. |
-| **Gemini Nano via ML Kit GenAI** | Equivalent for supported Android (Pixel 8+, Galaxy S24+). Same shape as Apple's bridge. |
-| **iOS simulator / device build** | This host doesn't have an iOS simulator installed (`xcrun simctl list devices` is empty). Install via Xcode → Components or `xcodebuild -downloadPlatform iOS`, then `npx expo run:ios`. Bundle export already works. |
-| **Mobile attachments file picker** | Shared `attachments.ts` is mobile-compatible; only the file-picker UI in the mobile note editor is missing. Door A's strict scope kept it out. |
+| **Gemini Nano via ML Kit GenAI** | Equivalent for supported Android (Pixel 8+, Galaxy S24+). Same shape as Apple's bridge — Kotlin module exposing `GenerativeModel` over `RCTEventEmitter`. |
+| **iOS simulator / device build** | This host doesn't have an iOS simulator installed (`xcrun simctl list devices` is empty). Install path documented in §10 below. Bundle export already works. |
 | Slash menu inside the editor | Keyboard-toolbar `/` button; lower priority. |
 | Background fetch / push notifications for sync | Per spec §5.3, deferred. |
 | Biometric unlock (LocalAuthentication) | Per spec §5.3, deferred. |
-| Camera capture | Per spec §5.4, deferred (file picker covers most cases). |
+| Camera capture | Per spec §5.4 — `expo-image-picker` already covers gallery + camera roll; live capture is a one-call upgrade (`launchCameraAsync`). |
 | TenTap rich editor | Per spec §5.2, deferred — plain TextInput is fine for v1. |
 
 ---
@@ -359,17 +360,92 @@ npm --workspace @meo/desktop run tauri:dev   # native window
 
 Sign in, open Ask Meo, chat with your notes locally.
 
-### Mobile, current state (phase 2 — no native LLM yet)
+### Mobile, bare workflow (phase 3.5)
+
+`expo prebuild` has been run; this is no longer an Expo Go app. The
+native modules (`llama.rn`, `op-sqlite`, `onnxruntime-react-native`,
+`FoundationLLM`) require a native build.
 
 ```bash
 cd packages/mobile
 # Set Supabase config in app.json's `extra.supabaseAnonKey`
-npx expo start                # use Expo Go to scan QR
+npm install                          # picks up onnxruntime + foundation-llm
+npx expo run:ios                     # compiles + installs to simulator
+# or
+npx expo run:android                 # compiles + installs to emulator
 ```
 
-Auth, notes, folders, tags, search, long-press menus, AI sheet shell
-(placeholder) all work. Ask Meo on mobile pops the placeholder until
-phase 3 lands.
+The Metro bundler ships the JS automatically; the simulator hot-reloads
+on save. Auth, notes, folders, tags, search, long-press menus, AI
+sheet, attachments (image + file picker), and Settings → AI all work.
+
+#### Installing the iOS simulator (first-time on a fresh Mac)
+
+`npx expo run:ios` requires Xcode + an iOS simulator runtime. On a host
+where `xcrun simctl list devices` is empty:
+
+```bash
+# Check what's installed
+xcodebuild -showsdks
+
+# Option A — via Xcode CLI (~7 GB download)
+sudo xcodebuild -downloadPlatform iOS
+
+# Option B — via Xcode UI: open Xcode → Settings → Components → click
+# "Download" next to the latest iOS Simulator runtime.
+
+# After it finishes, verify:
+xcrun simctl list devices | grep -i "iphone"
+```
+
+Once a simulator runtime is installed, `npx expo run:ios` boots one
+automatically (defaults to the latest iPhone). To pick a specific one:
+
+```bash
+npx expo run:ios --device "iPhone 16 Pro"
+```
+
+#### CocoaPods caveats on Apple Silicon
+
+If `pod install` fails with FFI / json native build errors:
+
+```bash
+cd ios
+sudo gem install ffi
+arch -x86_64 pod install            # one-shot if rosetta-only gems
+```
+
+#### FoundationModels (iOS 18+) gating
+
+The `FoundationLLM` pod weak-links the FoundationModels framework, so
+the binary loads on iOS 15+ but the entry points return
+`{available: false}` on anything below iOS 18. Apple Intelligence is
+further gated by the OS to A17 Pro / M-series silicon — Settings → AI
+shows the model row as "Detected on this OS, native bridge not yet
+linked" until the device + user opt-in are both ready.
+
+### Final verification checklist
+
+Run these commands to confirm a green build before tagging v1.0:
+
+```bash
+# Backend
+cd supabase && supabase status                  # all containers healthy
+node ../packages/shared/test-supabase-e2e.mjs   # 10/10 green
+
+# Crypto + AI
+node ../packages/shared/test-crypto.mjs                     # 7 tests
+cd ../packages/mobile && node test-tokenizer.mjs            # 9 tests
+node test-interop.mjs                                       # 4 tests
+node test-attachments-interop.mjs                           # 3 tests
+
+# Bundles
+cd ../desktop && npm run build                              # ✅ no warnings
+cd ../mobile && npx tsc --noEmit                            # ✅ exit 0
+npx expo export --platform ios --output-dir export-test     # ~3.2 MB hbc
+```
+
+All test suites are currently green at HEAD.
 
 ---
 

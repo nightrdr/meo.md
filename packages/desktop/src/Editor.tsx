@@ -1,12 +1,18 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useEditor, EditorContent, type Editor as TipTapEditor } from '@tiptap/react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEditor, EditorContent, type Editor as TipTapEditor, Extension } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
+import TaskList from '@tiptap/extension-task-list';
+import TaskItem from '@tiptap/extension-task-item';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { Note } from '@meo/shared';
 import { ATTACHMENT_URL_PREFIX, MAX_ATTACHMENT_BYTES } from '@meo/shared';
 import { Icon } from './Icon';
 import { SlashMenu } from './SlashMenu';
 import { AttachmentImageExtension, makeAttachmentsClient } from './AttachmentRenderer';
+import { getAIRuntime } from './aiStore';
+import { shortcut } from './platform';
 
 interface Props {
   note: Note;
@@ -22,6 +28,62 @@ interface Props {
 
 type EditorMode = 'edit' | 'split' | 'preview';
 
+// Find plugin — paints decorations on every case-insensitive match of
+// the active query. The query lives on the plugin's own state and is
+// updated by dispatching a transaction with a meta payload.
+const findPluginKey = new PluginKey<{ query: string; currentIndex: number; total: number }>('meo-find');
+
+function buildDecorationSet(doc: any, query: string, currentIndex: number): { decos: DecorationSet; total: number } {
+  if (!query) return { decos: DecorationSet.empty, total: 0 };
+  const decorations: Decoration[] = [];
+  let i = 0;
+  const q = query.toLowerCase();
+  doc.descendants((node: any, pos: number) => {
+    if (!node.isText) return;
+    const text: string = node.text || '';
+    const lower = text.toLowerCase();
+    let from = 0;
+    while (true) {
+      const at = lower.indexOf(q, from);
+      if (at < 0) break;
+      decorations.push(
+        Decoration.inline(pos + at, pos + at + q.length, {
+          class: i === currentIndex ? 'meo-find-hit meo-find-hit-current' : 'meo-find-hit',
+        }),
+      );
+      from = at + Math.max(1, q.length);
+      i++;
+    }
+  });
+  return { decos: DecorationSet.create(doc, decorations), total: i };
+}
+
+const FindExtension = Extension.create({
+  name: 'meoFind',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: findPluginKey,
+        state: {
+          init: () => ({ decos: DecorationSet.empty as any, query: '', currentIndex: -1, total: 0 }),
+          apply(tr, prev: any) {
+            const meta = tr.getMeta(findPluginKey) as any;
+            const query = meta?.query !== undefined ? meta.query : prev.query;
+            const currentIndex = meta?.currentIndex !== undefined ? meta.currentIndex : prev.currentIndex;
+            // Recompute on doc change OR on meta update.
+            if (!tr.docChanged && meta === undefined) return prev;
+            const { decos, total } = buildDecorationSet(tr.doc, query, currentIndex);
+            return { decos, query, currentIndex, total };
+          },
+        },
+        props: {
+          decorations(state) { return (findPluginKey.getState(state) as any)?.decos; },
+        },
+      }),
+    ];
+  },
+});
+
 export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId, notes, onChange, onDelete }: Props) {
   const lastNoteId = useRef(note.id);
   const [mode, setMode] = useState<EditorMode>('edit');
@@ -31,17 +93,39 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
   const [dropActive, setDropActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Find-in-note state ──
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [findIndex, setFindIndex] = useState(0);
+
+  // ── AI bubble state (proofread / summarize) ──
+  type Bubble =
+    | { kind: 'idle' }
+    | { kind: 'running'; action: 'summarize' | 'proofread' }
+    | { kind: 'result'; action: 'summarize' | 'proofread'; text: string; original: string; selectionFrom: number; selectionTo: number };
+  const [bubble, setBubble] = useState<Bubble>({ kind: 'idle' });
+  const bubbleAbortRef = useRef<AbortController | null>(null);
+
+  // ── Split-view ping-pong guard ──
+  // When the textarea drives an update (user types in source) we set this
+  // flag so the TipTap onUpdate doesn't echo it back and produce a loop.
+  const sourceDrivenRef = useRef(false);
+
   const editor = useEditor({
     extensions: [
-      // Disable any built-in image so our AttachmentImageExtension owns the
-      // 'image' name. (StarterKit doesn't include images by default at the
-      // time of this writing, but be defensive.)
       StarterKit.configure({}),
       Placeholder.configure({ placeholder: 'Start writing in markdown' }),
       AttachmentImageExtension,
+      // Task list: stored as `<ul data-type="taskList"><li data-type="taskItem"
+      // data-checked="true|false">…</li></ul>` and serialized to markdown
+      // as `- [x] / - [ ]` by markdownFromHtml below.
+      TaskList,
+      TaskItem.configure({ nested: true }),
+      FindExtension,
     ],
     content: htmlFromMarkdown(note.body),
     onUpdate: ({ editor }) => {
+      if (sourceDrivenRef.current) return;
       onChange({ ...note, body: markdownFromHtml(editor.getHTML()) });
     },
   });
@@ -122,8 +206,171 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
     if (note.id !== lastNoteId.current) {
       lastNoteId.current = note.id;
       editor.commands.setContent(htmlFromMarkdown(note.body), false);
+      // Reset find state when switching notes — a query from the
+      // previous note doesn't apply.
+      setFindOpen(false); setFindQuery(''); setFindIndex(0);
+      setBubble({ kind: 'idle' });
     }
   }, [note.id, note.body, editor]);
+
+  // ── Push the active find query into the ProseMirror plugin ──
+  useEffect(() => {
+    if (!editor) return;
+    editor.view.dispatch(
+      editor.view.state.tr.setMeta(findPluginKey, { query: findQuery, currentIndex: findIndex }),
+    );
+  }, [editor, findQuery, findIndex]);
+
+  // ── Preview mode = read-only TipTap. Edit and Split keep editing on. ──
+  useEffect(() => {
+    if (!editor) return;
+    editor.setEditable(mode !== 'preview');
+  }, [editor, mode]);
+  const findTotal: number = useMemo(() => {
+    if (!editor || !findQuery) return 0;
+    return (findPluginKey.getState(editor.view.state) as any)?.total ?? 0;
+  }, [editor, findQuery, note.body]);
+
+  // ── Split-view source-pane edit handler ──
+  // The textarea is the source of truth for `note.body`. We re-set the
+  // TipTap content with the sourceDrivenRef flag so its onUpdate doesn't
+  // echo back and create a loop.
+  const handleSourceChange = useCallback((nextBody: string) => {
+    if (!editor) {
+      onChange({ ...note, body: nextBody });
+      return;
+    }
+    sourceDrivenRef.current = true;
+    onChange({ ...note, body: nextBody });
+    editor.commands.setContent(htmlFromMarkdown(nextBody), false);
+    // Release the flag after the React + TipTap microtasks settle.
+    queueMicrotask(() => { sourceDrivenRef.current = false; });
+  }, [editor, note, onChange]);
+
+  // ── AI bubble logic — proofread / summarize ──
+  const cancelBubble = useCallback(() => {
+    bubbleAbortRef.current?.abort();
+    bubbleAbortRef.current = null;
+    setBubble({ kind: 'idle' });
+  }, []);
+
+  const runAIBubble = useCallback(async (action: 'summarize' | 'proofread') => {
+    if (!editor) return;
+    // Use the current selection if non-empty, otherwise the whole body.
+    const { from, to } = editor.state.selection;
+    const hasSelection = from !== to;
+    const selectionText = hasSelection
+      ? editor.state.doc.textBetween(from, to, '\n')
+      : note.body;
+    if (!selectionText.trim()) return;
+
+    setBubble({ kind: 'running', action });
+    const abort = new AbortController();
+    bubbleAbortRef.current = abort;
+    try {
+      const rt = await getAIRuntime();
+      const av = await rt.isAvailable();
+      if (!av.ollama) {
+        setBubble({
+          kind: 'result', action,
+          text: '(AI is not available — install Ollama and pull a model.)',
+          original: selectionText, selectionFrom: from, selectionTo: to,
+        });
+        return;
+      }
+      const system = action === 'summarize'
+        ? 'You write concise, accurate summaries. Output only the summary, no preamble.'
+        : 'You proofread English prose. Fix spelling, grammar, and minor style issues. Preserve every fact, name, and number. Output only the corrected text, no commentary.';
+      const userPrompt = action === 'summarize'
+        ? `Summarize the following in 3 sentences:\n\n${selectionText}`
+        : `Proofread the following text. Output the corrected version only.\n\n${selectionText}`;
+      const stream = rt.generator.stream({
+        model: modelId,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: userPrompt },
+        ],
+        maxTokens: 512,
+        temperature: action === 'summarize' ? 0.4 : 0.2,
+        signal: abort.signal,
+      });
+      let buf = '';
+      // Show streaming text as it arrives.
+      for await (const c of stream) {
+        if (abort.signal.aborted) return;
+        if (c.delta) {
+          buf += c.delta;
+          setBubble({
+            kind: 'result', action, text: buf,
+            original: selectionText, selectionFrom: from, selectionTo: to,
+          });
+        }
+      }
+    } catch (e: any) {
+      setBubble({
+        kind: 'result', action,
+        text: `(AI error: ${e?.message ?? String(e)})`,
+        original: selectionText, selectionFrom: from, selectionTo: to,
+      });
+    } finally {
+      bubbleAbortRef.current = null;
+    }
+  }, [editor, note.body, modelId]);
+
+  const applyProofread = useCallback(() => {
+    if (!editor || bubble.kind !== 'result') return;
+    const { selectionFrom, selectionTo, text } = bubble;
+    if (selectionFrom !== selectionTo) {
+      // Replace the selection.
+      editor.chain()
+        .focus()
+        .setTextSelection({ from: selectionFrom, to: selectionTo })
+        .insertContent(text.trim())
+        .run();
+    } else {
+      // Replace the whole body.
+      editor.commands.setContent(htmlFromMarkdown(text.trim()), true);
+    }
+    setBubble({ kind: 'idle' });
+  }, [editor, bubble]);
+
+  // ── Editor-local Esc + ⌘F + ⌘A handling ──
+  // Captures Esc *before* App.tsx's global handler so editor overlays
+  // close first; we stopPropagation when we consume.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      // ⌘F (or Ctrl+F) opens the find bar
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setFindOpen(true);
+        return;
+      }
+      // ⌘A inside the editor view → route through ProseMirror's
+      // selectAll so the view repaints with a visible AllSelection.
+      // Without this, the macOS Edit menu's selectAll: action does
+      // a native DOM selectAll that PM may not reconcile, leaving
+      // the user with an invisible selection. We only intercept when
+      // the event actually originated inside the editor — letting it
+      // pass through to plain inputs/textareas (split source pane,
+      // title/folder/find-bar inputs) so their native behaviour is
+      // untouched.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a' && editor) {
+        const tgt = e.target as HTMLElement | null;
+        const inEditor = tgt instanceof Node && editor.view.dom.contains(tgt);
+        if (inEditor) {
+          e.preventDefault();
+          editor.commands.selectAll();
+          return;
+        }
+      }
+      if (e.key === 'Escape') {
+        if (bubble.kind !== 'idle') { cancelBubble(); e.stopPropagation(); e.preventDefault(); return; }
+        if (findOpen) { setFindOpen(false); setFindQuery(''); e.stopPropagation(); e.preventDefault(); return; }
+      }
+    };
+    document.addEventListener('keydown', onKey, true); // capture phase
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [bubble, findOpen, cancelBubble, editor]);
 
   const addTag = () => {
     const t = tagInput.trim().replace(/^#/, '').toLowerCase();
@@ -177,7 +424,53 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
         mode={mode}
         setMode={setMode}
         onPickAttachment={() => fileInputRef.current?.click()}
+        onOpenFind={() => setFindOpen(true)}
+        onSummarize={() => runAIBubble('summarize')}
+        onProofread={() => runAIBubble('proofread')}
+        bubbleRunning={bubble.kind === 'running' ? bubble.action : null}
       />
+
+      {/* In-note find bar — ⌘F or toolbar button. Highlights matches via
+          a ProseMirror plugin in edit/preview mode and via an overlay in
+          split mode. */}
+      {findOpen && (
+        <div className="find-bar">
+          <Icon.Search size={13} />
+          <input
+            autoFocus
+            value={findQuery}
+            placeholder={`Find in note (${mode}) — ${shortcut('F')}`}
+            onChange={(e) => { setFindQuery(e.target.value); setFindIndex(0); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (findTotal === 0) return;
+                setFindIndex(i => (i + (e.shiftKey ? -1 : 1) + findTotal) % findTotal);
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                setFindOpen(false); setFindQuery('');
+              }
+            }}
+          />
+          <span className="find-counter">
+            {findQuery ? (findTotal ? `${Math.min(findIndex + 1, findTotal)}/${findTotal}` : '0/0') : ''}
+          </span>
+          <button className="find-btn"
+            disabled={!findQuery || findTotal === 0}
+            title="Previous match (Shift+Enter)"
+            onClick={() => setFindIndex(i => (i - 1 + findTotal) % findTotal)}
+          ><Icon.Chevron size={12} style={{ transform: 'rotate(180deg)' }} /></button>
+          <button className="find-btn"
+            disabled={!findQuery || findTotal === 0}
+            title="Next match (Enter)"
+            onClick={() => setFindIndex(i => (i + 1) % findTotal)}
+          ><Icon.Chevron size={12} /></button>
+          <button className="find-btn" title="Close (Esc)"
+            onClick={() => { setFindOpen(false); setFindQuery(''); }}
+          ><Icon.X size={12} /></button>
+        </div>
+      )}
 
       <input
         ref={fileInputRef}
@@ -197,13 +490,69 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
         onDragLeave={onDragLeave}
       >
         {mode === 'split' && (
-          <pre className="editor-source">{note.body || ' '}</pre>
+          <div className="editor-source-wrap">
+            <textarea
+              className="editor-source"
+              value={note.body}
+              onChange={(e) => handleSourceChange(e.target.value)}
+              placeholder="Start writing markdown…"
+              spellCheck={false}
+            />
+            {findOpen && findQuery && (
+              <div
+                className="editor-source-overlay"
+                aria-hidden
+                dangerouslySetInnerHTML={{
+                  __html: highlightOverlay(note.body, findQuery, findIndex),
+                }}
+              />
+            )}
+          </div>
         )}
         <div className="editor-canvas" style={{ position: 'relative' }}>
           <EditorContent editor={editor} />
 
           {/* Slash menu (`/` inside the body opens AI actions) */}
           <SlashMenu editor={editor} note={note} modelId={modelId} notes={notes} onUpdate={onChange} />
+
+          {/* AI bubble (proofread / summarize). Anchored to the top of the
+              canvas; absolute, so it floats above the prose. */}
+          {bubble.kind !== 'idle' && (
+            <div className="ai-bubble" style={{ top: 8, right: 8 }}>
+              <div className="ai-bubble-header">
+                {bubble.kind === 'running' && <span className="spinner" />}
+                {bubble.kind === 'result' && <Icon.Sparkle size={12} stroke="var(--ai)" />}
+                <span className="label">
+                  {bubble.action === 'summarize' ? 'Summary' : 'Proofread'}
+                </span>
+                <div className="grow" />
+                <button onClick={cancelBubble} title="Close (Esc)">
+                  <Icon.X size={12} />
+                </button>
+              </div>
+              <div className="ai-bubble-body">
+                {bubble.kind === 'running'
+                  ? 'Generating…'
+                  : bubble.action === 'proofread'
+                    ? <ProofreadDiff before={bubble.original} after={bubble.text} />
+                    : bubble.text}
+              </div>
+              {bubble.kind === 'result' && (
+                <div className="ai-bubble-actions">
+                  <div className="grow" />
+                  <button onClick={() => navigator.clipboard.writeText(bubble.text.trim())}>
+                    <Icon.Copy size={11} style={{ marginRight: 4, verticalAlign: -1 }} />
+                    Copy
+                  </button>
+                  {bubble.action === 'proofread' && (
+                    <button className="primary" onClick={applyProofread}>
+                      Apply
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Tag chips inline at the bottom of the note body */}
           <div className="tag-row">
@@ -279,14 +628,59 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
 }
 
 function Toolbar({
-  editor, mode, setMode, onPickAttachment,
+  editor, mode, setMode, onPickAttachment, onOpenFind, onSummarize, onProofread, bubbleRunning,
 }: {
   editor: TipTapEditor | null;
   mode: EditorMode;
   setMode: (m: EditorMode) => void;
   onPickAttachment: () => void;
+  onOpenFind: () => void;
+  onSummarize: () => void;
+  onProofread: () => void;
+  bubbleRunning: 'summarize' | 'proofread' | null;
 }) {
   if (!editor) return <div className="editor-toolbar" style={{ height: 41 }} />;
+
+  // Preserve the editor's selection across toolbar button clicks. By
+  // default, mousedown on a <button> moves focus *away* from the
+  // contenteditable, which collapses the selection to a single cursor
+  // — so single-click commands ran on a stale/empty selection (need a
+  // second click to take), and multi-line selections only formatted
+  // the first line. preventDefault on mousedown stops the focus shift
+  // while still letting click run normally.
+  const preserveFocus = (e: React.MouseEvent) => {
+    // Mode-segment buttons are navigational — let them take focus
+    // normally so keyboard nav still works inside the segment.
+    if ((e.target as HTMLElement).closest('.mode-segment')) return;
+    e.preventDefault();
+  };
+
+  // Preview mode: hide editing controls so users don't click greyed-out
+  // buttons that silently no-op. Keep Find (still useful when reading)
+  // and the mode segment (so the user can switch back).
+  if (mode === 'preview') {
+    return (
+      <div className="editor-toolbar" onMouseDown={preserveFocus}>
+        <button type="button" title={`Find in note (${shortcut('F')})`} onClick={onOpenFind}>
+          <Icon.Search size={14} />
+        </button>
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 11, color: 'var(--ink3)', marginRight: 8, fontWeight: 600, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+          Read-only
+        </span>
+        <div className="mode-segment">
+          {(['edit', 'split', 'preview'] as EditorMode[]).map(m => (
+            <button
+              key={m}
+              type="button"
+              className={mode === m ? 'on' : ''}
+              onClick={() => setMode(m)}
+            >{m === 'edit' ? 'Edit' : m === 'split' ? 'Split' : 'Preview'}</button>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const Btn = ({ icon, label, onClick, active = false, disabled = false }: {
     icon: React.ReactNode; label: string; onClick: () => void;
@@ -313,16 +707,16 @@ function Toolbar({
   })();
 
   return (
-    <div className="editor-toolbar">
+    <div className="editor-toolbar" onMouseDown={preserveFocus}>
       <Btn
         icon={<Icon.Undo size={14} />}
-        label="Undo, ⌘Z"
+        label={`Undo, ${shortcut('Z')}`}
         onClick={() => editor.chain().focus().undo().run()}
         disabled={!editor.can().undo()}
       />
       <Btn
         icon={<Icon.Redo size={14} />}
-        label="Redo, ⇧⌘Z"
+        label={`Redo, ${shortcut('Z', 'shift')}`}
         onClick={() => editor.chain().focus().redo().run()}
         disabled={!editor.can().redo()}
       />
@@ -355,10 +749,10 @@ function Toolbar({
         )}
       </div>
 
-      <Btn icon={<Icon.Bold size={14} />} label="Bold, ⌘B"
+      <Btn icon={<Icon.Bold size={14} />} label={`Bold, ${shortcut('B')}`}
         active={editor.isActive('bold')}
         onClick={() => editor.chain().focus().toggleBold().run()} />
-      <Btn icon={<Icon.Italic size={14} />} label="Italic, ⌘I"
+      <Btn icon={<Icon.Italic size={14} />} label={`Italic, ${shortcut('I')}`}
         active={editor.isActive('italic')}
         onClick={() => editor.chain().focus().toggleItalic().run()} />
       <Btn icon={<Icon.Strike size={14} />} label="Strikethrough"
@@ -367,7 +761,7 @@ function Toolbar({
 
       <Sep />
 
-      <Btn icon={<Icon.Link size={14} />} label="Link, ⌘K (paste markdown)"
+      <Btn icon={<Icon.Link size={14} />} label="Link (paste markdown)"
         onClick={() => {
           const url = prompt('Link URL');
           if (!url) return;
@@ -390,6 +784,9 @@ function Toolbar({
       <Btn icon={<Icon.ListNumbered size={14} />} label="Numbered list"
         active={editor.isActive('orderedList')}
         onClick={() => editor.chain().focus().toggleOrderedList().run()} />
+      <Btn icon={<Icon.Checklist size={14} />} label="To-do list"
+        active={editor.isActive('taskList')}
+        onClick={() => (editor.chain().focus() as any).toggleTaskList().run()} />
       <Btn icon={<Icon.Outdent size={14} />} label="Outdent"
         onClick={() => editor.chain().focus().liftListItem('listItem').run()} />
       <Btn icon={<Icon.Indent size={14} />} label="Indent"
@@ -402,11 +799,31 @@ function Toolbar({
         onClick={() => editor.chain().focus().toggleBlockquote().run()} />
       <Btn icon={<Icon.Hr size={14} />} label="Horizontal rule"
         onClick={() => editor.chain().focus().setHorizontalRule().run()} />
+      <Btn icon={<Icon.Search size={14} />} label={`Find in note (${shortcut('F')})`}
+        onClick={onOpenFind} />
 
       <Sep />
 
       <button type="button" title="AI actions, /" className="ai-toolbar-btn">
         <Icon.Sparkle size={14} stroke="var(--ai)" />
+      </button>
+      <button
+        type="button"
+        title="Summarize selection or whole note"
+        className="ai-toolbar-btn"
+        disabled={!!bubbleRunning}
+        onClick={onSummarize}
+      >
+        <Icon.Summary size={14} stroke="var(--ai)" />
+      </button>
+      <button
+        type="button"
+        title="Proofread selection or whole note"
+        className="ai-toolbar-btn"
+        disabled={!!bubbleRunning}
+        onClick={onProofread}
+      >
+        <Icon.Spell size={14} stroke="var(--ai)" />
       </button>
 
       <div style={{ flex: 1 }} />
@@ -451,7 +868,7 @@ function htmlFromMarkdown(md: string): string {
   if (!md) return '';
   const lines = md.split('\n');
   const out: string[] = [];
-  let inList: null | 'ul' | 'ol' = null;
+  let inList: null | 'ul' | 'ol' | 'task' = null;
   let inCode = false;
   for (const raw of lines) {
     const line = raw.replace(/\r$/, '');
@@ -466,6 +883,14 @@ function htmlFromMarkdown(md: string): string {
     if (line.startsWith('### ')) { closeList(); out.push(`<h3>${inline(line.slice(4))}</h3>`); continue; }
     if (line.startsWith('> ')) { closeList(); out.push(`<blockquote><p>${inline(line.slice(2))}</p></blockquote>`); continue; }
     if (/^---+$/.test(line)) { closeList(); out.push('<hr>'); continue; }
+    // Task-list items must be checked BEFORE the generic ulMatch.
+    const taskMatch = line.match(/^[-*] \[([ xX])\] (.+)$/);
+    if (taskMatch) {
+      openList('task');
+      const checked = /[xX]/.test(taskMatch[1]) ? 'true' : 'false';
+      out.push(`<li data-type="taskItem" data-checked="${checked}"><label><input type="checkbox"${checked === 'true' ? ' checked' : ''}><span></span></label><div><p>${inline(taskMatch[2])}</p></div></li>`);
+      continue;
+    }
     const ulMatch = line.match(/^[-*] (.+)$/);
     const olMatch = line.match(/^\d+\. (.+)$/);
     if (ulMatch) { openList('ul'); out.push(`<li><p>${inline(ulMatch[1])}</p></li>`); continue; }
@@ -478,14 +903,21 @@ function htmlFromMarkdown(md: string): string {
   if (inCode) out.push('</code></pre>');
   return out.join('');
 
-  function openList(kind: 'ul' | 'ol') {
+  function openList(kind: 'ul' | 'ol' | 'task') {
     if (inList === kind) return;
-    if (inList) out.push(`</${inList}>`);
-    out.push(`<${kind}>`);
+    if (inList) out.push(closeTag(inList));
+    out.push(openTag(kind));
     inList = kind;
   }
   function closeList() {
-    if (inList) { out.push(`</${inList}>`); inList = null; }
+    if (inList) { out.push(closeTag(inList)); inList = null; }
+  }
+  function openTag(kind: 'ul' | 'ol' | 'task'): string {
+    if (kind === 'task') return '<ul data-type="taskList">';
+    return `<${kind}>`;
+  }
+  function closeTag(kind: 'ul' | 'ol' | 'task'): string {
+    return kind === 'task' ? '</ul>' : `</${kind}>`;
   }
 }
 
@@ -561,6 +993,19 @@ function walk(node: Node): string {
     case 'pre': return `\n\`\`\`\n${inner.trim()}\n\`\`\`\n`;
     case 'blockquote': return inner.split('\n').filter(Boolean).map(l => `> ${l.replace(/^\s+/, '')}`).join('\n') + '\n';
     case 'ul': {
+      // Task list — TipTap marks <ul> with data-type="taskList".
+      if (el.getAttribute('data-type') === 'taskList') {
+        const items = Array.from(el.children).map(li => {
+          const checked = li.getAttribute('data-checked') === 'true';
+          // Each task item is `<li data-type="taskItem"><label><input>…</label><div><p>TEXT</p></div></li>`
+          // We pull text from the `<div>` content only (skip the checkbox label).
+          const body = Array.from(li.children)
+            .filter(c => c.tagName.toLowerCase() !== 'label')
+            .map(walk).join('').trim();
+          return `- [${checked ? 'x' : ' '}] ${body}`;
+        }).join('\n');
+        return `\n${items}\n`;
+      }
       const items = Array.from(el.children).map(li => `- ${walk(li).trim()}`).join('\n');
       return `\n${items}\n`;
     }
@@ -569,6 +1014,8 @@ function walk(node: Node): string {
       return `\n${items}\n`;
     }
     case 'li': return inner.trim();
+    // Skip rendering of the checkbox label inside taskItems (handled above).
+    case 'label': case 'input': return '';
     case 'hr': return `\n---\n`;
     case 'br': return `\n`;
     case 'img': {
@@ -588,4 +1035,95 @@ function walk(node: Node): string {
     }
     default: return inner;
   }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Find / highlight helpers
+// ──────────────────────────────────────────────────────────────────────
+
+// Build an HTML string that overlays match highlights on top of the
+// source-pane textarea. The textarea text is invisible (color:transparent
+// via CSS) but the overlay div uses identical font and padding so the
+// `<mark>` boxes line up with the underlying characters.
+function highlightOverlay(text: string, query: string, currentIndex: number): string {
+  if (!query) return escapeHtmlOverlay(text);
+  const q = query.toLowerCase();
+  const lower = text.toLowerCase();
+  const out: string[] = [];
+  let i = 0;
+  let hitIndex = 0;
+  while (i < text.length) {
+    const at = lower.indexOf(q, i);
+    if (at < 0) { out.push(escapeHtmlOverlay(text.slice(i))); break; }
+    out.push(escapeHtmlOverlay(text.slice(i, at)));
+    const cls = hitIndex === currentIndex ? ' class="current"' : '';
+    out.push(`<mark${cls}>${escapeHtmlOverlay(text.slice(at, at + q.length))}</mark>`);
+    i = at + Math.max(1, q.length);
+    hitIndex++;
+  }
+  return out.join('');
+}
+
+// Standard HTML escape, plus we leave whitespace (incl. newlines) intact
+// so the overlay layout matches the textarea's wrapping exactly.
+function escapeHtmlOverlay(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Proofread diff — a tiny word-level LCS so the bubble can show what
+// the model actually changed. Insertions get a green tint, deletions
+// get a red strikethrough. Sufficient for at-a-glance review without
+// pulling in a full diff lib.
+// ──────────────────────────────────────────────────────────────────────
+
+function ProofreadDiff({ before, after }: { before: string; after: string }) {
+  const tokens = useMemo(() => diffWords(before.trim(), after.trim()), [before, after]);
+  return (
+    <>
+      {tokens.map((t, i) => {
+        if (t.kind === 'eq') return <React.Fragment key={i}>{t.text}</React.Fragment>;
+        if (t.kind === 'add') return <span key={i} className="diff-add">{t.text}</span>;
+        return <span key={i} className="diff-del">{t.text}</span>;
+      })}
+    </>
+  );
+}
+
+type DiffTok = { kind: 'eq' | 'add' | 'del'; text: string };
+
+function diffWords(a: string, b: string): DiffTok[] {
+  // Tokenize on word boundaries, keeping whitespace as its own tokens
+  // so the diff doesn't claim every space changed.
+  const tok = (s: string): string[] => s.match(/\s+|\S+/g) ?? [];
+  const A = tok(a), B = tok(b);
+  // Classic LCS — O(n*m). Notes are small enough that this is fine.
+  const n = A.length, m = B.length;
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      if (A[i] === B[j]) dp[i][j] = dp[i + 1][j + 1] + 1;
+      else dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const out: DiffTok[] = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (A[i] === B[j]) { out.push({ kind: 'eq', text: A[i] }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push({ kind: 'del', text: A[i] }); i++; }
+    else { out.push({ kind: 'add', text: B[j] }); j++; }
+  }
+  while (i < n) { out.push({ kind: 'del', text: A[i++] }); }
+  while (j < m) { out.push({ kind: 'add', text: B[j++] }); }
+  // Coalesce consecutive same-kind runs for cleaner DOM.
+  const coalesced: DiffTok[] = [];
+  for (const t of out) {
+    const last = coalesced[coalesced.length - 1];
+    if (last && last.kind === t.kind) last.text += t.text;
+    else coalesced.push({ ...t });
+  }
+  return coalesced;
 }

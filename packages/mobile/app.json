@@ -13,6 +13,7 @@
       "expo-router",
       "expo-secure-store",
       "./llama-rn-plugin.js",
+      "./foundation-llm-plugin.js",
       "onnxruntime-react-native"
     ],
     "extra": {

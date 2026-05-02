@@ -15,6 +15,7 @@ import { AIControls, MODELS } from './AIControls';
 import { AIPanel } from './AIPanel';
 import { Settings } from './Settings';
 import { peekAIRuntime } from './aiStore';
+import { Mod, shortcut } from './platform';
 import { setAttachmentsContext } from './AttachmentRenderer';
 import { supabaseUrl, supabaseAnonKey } from './session';
 
@@ -41,6 +42,21 @@ export default function App() {
   const [folderInput, setFolderInput] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [menu, setMenu] = useState<MenuState | null>(null);
+  // Sidebar tag-add inline input. Adds the tag to the currently
+  // selected note since tags only exist as members of notes.
+  const [tagAddOpen, setTagAddOpen] = useState(false);
+  const [tagAddInput, setTagAddInput] = useState('');
+  // Commit (or no-op-and-close) the sidebar tag-add input. Mirrors the
+  // editor's own tag-input commit behaviour so blur and Enter both work.
+  const commitSidebarTag = useCallback(() => {
+    const t = tagAddInput.trim().replace(/^#/, '').toLowerCase();
+    if (t && selected && !selected.tags.includes(t)) {
+      handleEditorChange({ ...selected, tags: [...selected.tags, t] });
+    }
+    setTagAddOpen(false);
+    setTagAddInput('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tagAddInput]);
   const [aiOn, setAiOn] = useState(true);
   const [modelId, setModelId] = useState<string>(MODELS[0].id);
   const [dynamicModels, setDynamicModels] = useState<typeof MODELS>([]);
@@ -67,25 +83,49 @@ export default function App() {
   }, []);
 
   // ⌘K opens search; ⌘/ toggles AI panel; ⌘N creates a note.
+  // Escape closes the topmost overlay; if nothing is open, exits
+  // browser fullscreen (macOS native fullscreen exits via the green
+  // button — this handles the F11/document.fullscreenElement case).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setSearchOpen(true);
+        return;
       }
       if ((e.metaKey || e.ctrlKey) && e.key === '/') {
         e.preventDefault();
         if (aiOn) setAiPanelOpen(o => !o);
+        return;
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n' && session) {
         e.preventDefault();
         handleNew();
+        return;
+      }
+      if (e.key === 'Escape') {
+        // Topmost overlay first — order matches z-index reading.
+        if (menu) { setMenu(null); e.preventDefault(); return; }
+        if (searchOpen) { setSearchOpen(false); e.preventDefault(); return; }
+        if (settingsOpen) { setSettingsOpen(false); e.preventDefault(); return; }
+        if (tagAddOpen) { setTagAddOpen(false); setTagAddInput(''); e.preventDefault(); return; }
+        if (creatingFolder) { setCreatingFolder(null); setFolderInput(''); e.preventDefault(); return; }
+        if (renamingFolder) { setRenamingFolder(null); setFolderInput(''); e.preventDefault(); return; }
+        if (aiPanelOpen) { setAiPanelOpen(false); e.preventDefault(); return; }
+        // Editor-internal overlays (find bar, AI bubbles, slash menu) handle
+        // Esc themselves at a deeper level and stopPropagation when they
+        // consume it. If we got here, nothing app-level is open — try to
+        // exit fullscreen.
+        if (document.fullscreenElement) {
+          document.exitFullscreen?.().catch(() => {});
+          e.preventDefault();
+        }
       }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, aiOn]);
+  }, [session, aiOn, menu, searchOpen, settingsOpen, tagAddOpen, creatingFolder, renamingFolder, aiPanelOpen]);
 
   // Embed-on-save lifecycle. Only re-indexes if the AI runtime is
   // already loaded (the AI panel has been opened this session).
@@ -353,7 +393,7 @@ export default function App() {
   const folderMenuItems = useCallback((path: string): MenuEntry[] => {
     const isAllNotes = path === '';
     return [
-      { label: 'New note here', icon: 'Plus', shortcut: '⌘N', onClick: () => { setSelectedFolder(path); handleNew(); } },
+      { label: 'New note here', icon: 'Plus', shortcut: shortcut('N'), onClick: () => { setSelectedFolder(path); handleNew(); } },
       { label: 'New sub-folder', icon: 'FolderPlus', onClick: () => startCreateFolder(path), disabled: isAllNotes },
       { separator: true },
       { label: 'Rename folder', icon: 'Edit', onClick: () => { setRenamingFolder(path); setFolderInput(path.split('/').pop() ?? ''); }, disabled: isAllNotes },
@@ -461,24 +501,24 @@ export default function App() {
       {/* ───────── Sidebar ───────── */}
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <MeoMark size={26} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="name">Meo</div>
-            <div className="email" title={session.email}>{session.email}</div>
+          <div className="brand-mark"><MeoMark size={26} /></div>
+          <div className="name">Meo</div>
+          <div className="brand-actions">
+            <button className="btn icon-btn" onClick={() => setSettingsOpen(true)} title="Settings">
+              <Icon.Settings size={14} />
+            </button>
+            <button className="btn icon-btn" onClick={handleLogout} title="Sign out">
+              <Icon.Eject size={14} />
+            </button>
           </div>
-          <button className="btn icon-btn" onClick={() => setSettingsOpen(true)} title="Settings">
-            <Icon.Settings size={14} />
-          </button>
-          <button className="btn icon-btn" onClick={handleLogout} title="Sign out">
-            <Icon.Eject size={14} />
-          </button>
+          <div className="email" title={session.email}>{session.email}</div>
         </div>
 
         <div className="sidebar-search">
           <button onClick={() => setSearchOpen(true)}>
             <Icon.Search size={14} />
             <span>Search</span>
-            <span className="kbd">⌘K</span>
+            <span className="kbd">{shortcut('K')}</span>
           </button>
         </div>
 
@@ -503,7 +543,7 @@ export default function App() {
               onClick={() => startCreateFolder('')}
               title="New folder"
             >
-              <Icon.Plus size={11} />
+              <Icon.Plus size={14} />
             </button>
           </div>
 
@@ -528,30 +568,53 @@ export default function App() {
             onDropNote={handleDropNote}
           />
 
+          <div className="section-header section-header-clickable">
+            <span>Tags</span>
+            <button
+              className="btn icon-btn small"
+              onClick={() => { setTagAddOpen(true); setTagAddInput(''); }}
+              disabled={!selected}
+              title={selected ? `Add tag to "${selected.title || 'Untitled'}"` : 'Open a note to add a tag'}
+            >
+              <Icon.Plus size={14} />
+            </button>
+          </div>
+          {tagAddOpen && selected && (
+            <div className="sidebar-tag-add">
+              <input
+                autoFocus
+                value={tagAddInput}
+                placeholder="tag name"
+                onChange={(e) => setTagAddInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitSidebarTag();
+                  if (e.key === 'Escape') { setTagAddOpen(false); setTagAddInput(''); }
+                }}
+                onBlur={commitSidebarTag}
+              />
+            </div>
+          )}
           {tagList.length > 0 && (
-            <>
-              <div className="section-header">Tags</div>
-              <div className="tag-chips">
-                {tagList.map(({ tag, count }) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    className={`tag-chip ${selectedTag === tag ? 'active' : ''}`}
-                    onClick={() => { setSelectedTag(tag); setSelectedFolder(''); }}
-                    onContextMenu={(e) => openMenu(e, tagMenuItems(tag))}
-                    title={`${count} note${count === 1 ? '' : 's'}`}
-                  >
-                    <span>#{tag}</span>
-                    <span className="tag-count">{count}</span>
-                  </button>
-                ))}
-                {selectedTag && (
-                  <button type="button" className="tag-chip clear" onClick={() => setSelectedTag(null)}>
-                    <Icon.X size={10} /> Clear
-                  </button>
-                )}
-              </div>
-            </>
+            <div className="tag-chips">
+              {tagList.map(({ tag, count }) => (
+                <button
+                  key={tag}
+                  type="button"
+                  className={`tag-chip ${selectedTag === tag ? 'active' : ''}`}
+                  onClick={() => { setSelectedTag(tag); setSelectedFolder(''); }}
+                  onContextMenu={(e) => openMenu(e, tagMenuItems(tag))}
+                  title={`${count} note${count === 1 ? '' : 's'}`}
+                >
+                  <span>#{tag}</span>
+                  <span className="tag-count">{count}</span>
+                </button>
+              ))}
+              {selectedTag && (
+                <button type="button" className="tag-chip clear" onClick={() => setSelectedTag(null)}>
+                  <Icon.X size={10} /> Clear
+                </button>
+              )}
+            </div>
           )}
         </div>
 
@@ -561,11 +624,11 @@ export default function App() {
             className="ai-open-btn"
             disabled={!aiOn}
             onClick={() => aiOn && setAiPanelOpen(o => !o)}
-            title={aiPanelOpen ? 'Close Ask Meo (⌘/)' : 'Open Ask Meo (⌘/)'}
+            title={aiPanelOpen ? `Close Ask Meo (${shortcut('/')})` : `Open Ask Meo (${shortcut('/')})`}
           >
             <Icon.Sparkle size={13} stroke={aiOn ? 'var(--ai)' : 'var(--ink3)'} />
             <span>Ask Meo</span>
-            <span className="kbd">⌘/</span>
+            <span className="kbd">{shortcut('/')}</span>
           </button>
           <AIControls
             aiOn={aiOn}
@@ -583,7 +646,7 @@ export default function App() {
           <h2>{selectedTag ? `#${selectedTag}` : (selectedFolder || 'All notes')}</h2>
           <span className="count">{visibleNotes.length} {visibleNotes.length === 1 ? 'note' : 'notes'}</span>
           <div style={{ flex: 1 }} />
-          <button className="btn icon-btn" onClick={handleNew} title="New note (⌘N)">
+          <button className="btn icon-btn" onClick={handleNew} title={`New note (${shortcut('N')})`}>
             <Icon.Plus size={14} />
           </button>
         </div>

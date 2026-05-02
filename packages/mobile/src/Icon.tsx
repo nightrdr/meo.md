@@ -44,6 +44,8 @@ export const Icon = {
   List: (p: IconProps) => <I {...p}><Path d="M9 6h12M9 12h12M9 18h12" /><Circle cx="4" cy="6" r="1" fill="currentColor" /><Circle cx="4" cy="12" r="1" fill="currentColor" /><Circle cx="4" cy="18" r="1" fill="currentColor" /></I>,
   Checklist: (p: IconProps) => <I {...p}><Path d="m3 6 2 2 3-3M3 13l2 2 3-3M3 20l2 2 3-3M12 7h10M12 14h10M12 21h6" /></I>,
   H1: (p: IconProps) => <I {...p}><Path d="M4 5v14M12 5v14M4 12h8M16 9l3-2v12" /></I>,
+  Image: (p: IconProps) => <I {...p}><Rect x="3" y="4" width="18" height="16" rx="2" /><Circle cx="9" cy="10" r="1.5" /><Path d="m4 18 5-5 4 4 3-3 4 4" /></I>,
+  Paperclip: (p: IconProps) => <I {...p}><Path d="m21 11-9 9a5.5 5.5 0 1 1-7.8-7.8L13 3.7a3.5 3.5 0 0 1 5 5L9.4 17.2a1.5 1.5 0 0 1-2.1-2.1L15 7.5" /></I>,
   Lock: (p: IconProps) => <I {...p}><Rect x="5" y="11" width="14" height="10" rx="2" /><Path d="M8 11V7a4 4 0 0 1 8 0v4" /></I>,
   Copy: (p: IconProps) => <I {...p}><Rect x="9" y="9" width="11" height="11" rx="2" /><Path d="M5 15V5a2 2 0 0 1 2-2h10" /></I>,
   ArrowUp: (p: IconProps) => <I {...p}><Path d="M12 19V5M6 11l6-6 6 6" /></I>,

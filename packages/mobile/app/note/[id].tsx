@@ -14,7 +14,11 @@ import { Icon } from '../../src/Icon';
 import { ActionSheet, type ActionItem } from '../../src/ActionSheet';
 import { AISheet } from '../../src/AISheet';
 import * as Clipboard from 'expo-clipboard';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import { uploadAttachment } from '../../src/attachmentsBridge';
 import type { Note } from '../../src/shared';
+import { ATTACHMENT_URL_PREFIX } from '../../src/shared/attachments';
 
 export default function NoteEditor() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -25,6 +29,7 @@ export default function NoteEditor() {
   const [status, setStatus] = useState<'saved' | 'saving' | 'error'>('saved');
   const [actionSheet, setActionSheet] = useState<{ title?: string; items: ActionItem[] } | null>(null);
   const [aiOpen, setAiOpen] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<{ kind: 'idle' } | { kind: 'busy'; filename: string } | { kind: 'error'; message: string }>({ kind: 'idle' });
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -77,6 +82,76 @@ export default function NoteEditor() {
     if (!note) return;
     update({ tags: note.tags.filter(x => x !== t) });
   };
+
+  // ─── Attachment uploads (image + arbitrary file) ───
+  const insertAttachmentMarkdown = useCallback((id: string, filename: string, isImage: boolean) => {
+    if (!note) return;
+    const url = `${ATTACHMENT_URL_PREFIX}${id}`;
+    const md = isImage ? `\n\n![${filename}](${url})\n\n` : `\n[${filename}](${url})\n`;
+    update({ body: note.body + md });
+  }, [note, update]);
+
+  const handleImagePick = useCallback(async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission needed', 'Please allow access to your photo library.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      base64: true,
+      quality: 0.92,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    const filename = asset.fileName || `image-${Date.now()}.jpg`;
+    if (!asset.base64) {
+      Alert.alert('Image error', 'Could not read image bytes.');
+      return;
+    }
+    setUploadStatus({ kind: 'busy', filename });
+    try {
+      // Decode base64 → Uint8Array
+      const bin = atob(asset.base64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const dimensions = (asset.width && asset.height)
+        ? { width: asset.width, height: asset.height }
+        : undefined;
+      const { id: noteId } = note!;
+      const r = await uploadAttachment(noteId, {
+        bytes, filename, mimeType: asset.mimeType ?? 'image/jpeg', dimensions,
+      });
+      insertAttachmentMarkdown(r.id, filename, true);
+      setUploadStatus({ kind: 'idle' });
+    } catch (e: any) {
+      setUploadStatus({ kind: 'error', message: e?.message ?? String(e) });
+    }
+  }, [insertAttachmentMarkdown, note]);
+
+  const handleDocumentPick = useCallback(async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      copyToCacheDirectory: true,
+      multiple: false,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    const filename = asset.name || `file-${Date.now()}`;
+    setUploadStatus({ kind: 'busy', filename });
+    try {
+      const resp = await fetch(asset.uri);
+      const buf = await resp.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      const r = await uploadAttachment(note!.id, {
+        bytes, filename, mimeType: asset.mimeType ?? 'application/octet-stream',
+      });
+      const isImage = (asset.mimeType ?? '').startsWith('image/');
+      insertAttachmentMarkdown(r.id, filename, isImage);
+      setUploadStatus({ kind: 'idle' });
+    } catch (e: any) {
+      setUploadStatus({ kind: 'error', message: e?.message ?? String(e) });
+    }
+  }, [insertAttachmentMarkdown, note]);
 
   if (!note) return null;
 
@@ -199,6 +274,31 @@ export default function NoteEditor() {
         </View>
       </ScrollView>
 
+      {/* Upload status banner */}
+      {uploadStatus.kind !== 'idle' && (
+        <View style={{
+          paddingVertical: 8, paddingHorizontal: 16,
+          borderTopWidth: 1, borderTopColor: MEO.paperEdge,
+          backgroundColor: uploadStatus.kind === 'busy' ? MEO.accentSoft : 'rgba(196,85,63,0.10)',
+          flexDirection: 'row', alignItems: 'center', gap: 8,
+        }}>
+          <Text style={{
+            flex: 1, fontSize: 12.5,
+            color: uploadStatus.kind === 'busy' ? MEO.accentInk : MEO.danger,
+            fontFamily: FONT_SANS,
+          }}>
+            {uploadStatus.kind === 'busy'
+              ? `Encrypting ${uploadStatus.filename}…`
+              : `Upload error: ${uploadStatus.message}`}
+          </Text>
+          {uploadStatus.kind === 'error' && (
+            <Pressable onPress={() => setUploadStatus({ kind: 'idle' })} hitSlop={8}>
+              <Icon.X size={12} stroke={MEO.danger} />
+            </Pressable>
+          )}
+        </View>
+      )}
+
       {/* Bottom toolbar */}
       <View style={{
         borderTopWidth: 1, borderTopColor: MEO.paperEdge,
@@ -209,6 +309,9 @@ export default function NoteEditor() {
         <Pressable onPress={() => setAiOpen(true)}>
           <Icon.Sparkle size={19} stroke={MEO.ai} />
         </Pressable>
+        <View style={{ width: 1, height: 18, backgroundColor: MEO.paperEdge }} />
+        <Pressable onPress={handleImagePick} hitSlop={4}><Icon.Image size={19} stroke={MEO.ink2} /></Pressable>
+        <Pressable onPress={handleDocumentPick} hitSlop={4}><Icon.Paperclip size={19} stroke={MEO.ink2} /></Pressable>
         <View style={{ width: 1, height: 18, backgroundColor: MEO.paperEdge }} />
         <Pressable onPress={() => insertAtEnd(note, update, '\n- [ ] ')}><Icon.Checklist size={19} stroke={MEO.ink2} /></Pressable>
         <Pressable onPress={() => insertAtEnd(note, update, '\n- ')}><Icon.List size={19} stroke={MEO.ink2} /></Pressable>

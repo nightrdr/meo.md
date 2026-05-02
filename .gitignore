@@ -17,5 +17,6 @@ packages/mobile/ios/
 packages/mobile/android/
 packages/mobile/.expo/
 supabase/.temp/
+supabase/.env
 test-dist/
 export-test/

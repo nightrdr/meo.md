@@ -39,3 +39,22 @@ export interface EncryptedNoteRow {
 export interface AuthSignupResponse { user_id: string; }
 export interface AuthLoginResponse { jwt: string; has_account: boolean; user_id: string; }
 export interface SyncResponse { notes: EncryptedNoteRow[]; cursor: number; }
+
+// ----------------------------------------------------------------------------
+// Attachments — kept identical to packages/shared/src/types.ts so cross-
+// platform interop is mechanical.
+// ----------------------------------------------------------------------------
+export interface AttachmentMetadata {
+  filename: string;
+  mime_type: string;
+  original_size: number;
+  sha256_checksum: string;
+  dimensions?: { width: number; height: number };
+}
+export interface AttachmentSummary {
+  id: string;
+  note_id: string;
+  encrypted_size: number;
+  metadata: AttachmentMetadata;
+  created_at: string;
+}

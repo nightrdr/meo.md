@@ -1,0 +1,7 @@
+{
+  "name": "foundation-llm",
+  "version": "0.1.0",
+  "description": "Apple FoundationModels (iOS 18+) bridge for meo.md",
+  "private": true,
+  "main": "index.js"
+}

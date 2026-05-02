@@ -50,27 +50,79 @@ export class SupabaseApiClient {
     }
   }
 
+  /**
+   * Password signup. Kept for the e2e test scripts (which need a fast
+   * non-interactive auth path) and for the legacy Hono backend's
+   * compatibility tests. The desktop UI uses requestEmailOtp /
+   * verifyEmailOtp instead.
+   */
   async signup(email: string, password: string): Promise<AuthSignupResponse> {
     const { data, error } = await this.sb.auth.signUp({ email, password });
-    if (error) throw new ApiError(error.status ?? 400, { error: error.message });
+    if (error) throw new ApiError(error.status ?? 400, { error: error.message, code: (error as any).code });
     if (!data.user) throw new ApiError(500, { error: 'signup returned no user' });
     return { user_id: data.user.id };
   }
 
+  /** Password login — same caveat as signup() above. */
   async login(email: string, password: string): Promise<AuthLoginResponse> {
     const { data, error } = await this.sb.auth.signInWithPassword({ email, password });
-    if (error) throw new ApiError(error.status ?? 401, { error: error.message });
+    if (error) throw new ApiError(error.status ?? 401, { error: error.message, code: (error as any).code });
     if (!data.session || !data.user) throw new ApiError(500, { error: 'login returned no session' });
-    this.jwt = data.session.access_token;
-    this.userId = data.user.id;
-    (this.sb as any).rest.headers['authorization'] = `Bearer ${this.jwt}`;
-    // has_account = does an entry exist in meo.accounts for this user?
-    const { count, error: e2 } = await this.sb
+    return this.adoptSession(data.session.access_token, data.user.id);
+  }
+
+  /**
+   * Step 1 of the email-OTP flow. Sends a 6-digit code to `email` via
+   * GoTrue's signInWithOtp. `shouldCreateUser: true` (the GoTrue
+   * default) means new emails are signed up implicitly on the first
+   * verifyEmailOtp — there is no separate signup step.
+   *
+   * Returns silently on success; throws an ApiError with a useful
+   * message on rate-limiting, invalid email, or disabled email auth.
+   */
+  async requestEmailOtp(email: string): Promise<{ sent: true }> {
+    const { error } = await this.sb.auth.signInWithOtp({
+      email,
+      options: {
+        shouldCreateUser: true,
+        // Force OTP-style code rather than magic link — the desktop UI
+        // wants the user to type 6 digits, not click a URL that would
+        // open in their default browser.
+        emailRedirectTo: undefined,
+      },
+    });
+    if (error) throw new ApiError(error.status ?? 400, { error: error.message, code: (error as any).code });
+    return { sent: true };
+  }
+
+  /**
+   * Step 2 of the email-OTP flow. Exchanges `token` for a session.
+   * Same return shape as login() so the caller doesn't care which auth
+   * path was used. has_account tells the UI whether to send the user
+   * to the unlock screen (returning) or the setup screen (new user).
+   */
+  async verifyEmailOtp(email: string, token: string): Promise<AuthLoginResponse> {
+    const { data, error } = await this.sb.auth.verifyOtp({ email, token, type: 'email' });
+    if (error) throw new ApiError(error.status ?? 400, { error: error.message, code: (error as any).code });
+    if (!data.session || !data.user) throw new ApiError(500, { error: 'verifyOtp returned no session' });
+    return this.adoptSession(data.session.access_token, data.user.id);
+  }
+
+  /**
+   * Common postlude for any auth path that yielded a session: install
+   * the JWT on the rest client, look up has_account, and return the
+   * shape the UI expects.
+   */
+  private async adoptSession(jwt: string, userId: string): Promise<AuthLoginResponse> {
+    this.jwt = jwt;
+    this.userId = userId;
+    (this.sb as any).rest.headers['authorization'] = `Bearer ${jwt}`;
+    const { count, error } = await this.sb
       .from('accounts')
       .select('user_id', { count: 'exact', head: true })
-      .eq('user_id', data.user.id);
-    if (e2) throw new ApiError(500, { error: e2.message });
-    return { jwt: this.jwt, has_account: (count ?? 0) > 0, user_id: data.user.id };
+      .eq('user_id', userId);
+    if (error) throw new ApiError(500, { error: error.message });
+    return { jwt, has_account: (count ?? 0) > 0, user_id: userId };
   }
 
   async getAccount(): Promise<AccountWrapper> {

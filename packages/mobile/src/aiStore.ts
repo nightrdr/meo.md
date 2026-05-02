@@ -26,6 +26,7 @@ import {
   type Note,
 } from './shared';
 import type { Generator } from './shared/ai/types';
+import { getUseRealEmbedder } from './aiSettings';
 
 export interface MobileAIRuntime {
   embedder: A.Embedder;
@@ -59,10 +60,31 @@ export async function getAIRuntime(): Promise<MobileAIRuntime> {
 }
 
 export function peekAIRuntime(): MobileAIRuntime | null { return cached; }
-export function clearAIRuntime(): void { cached = null; }
+export function clearAIRuntime(): void {
+  // Drop the ONNX session if we held one. Releasing the native handle
+  // is best-effort — the next build() will create a fresh one anyway.
+  A.clearEmbedderCache();
+  cached = null;
+}
 
 async function build(): Promise<MobileAIRuntime> {
-  const embedder = await A.getEmbedder();
+  // The user opts into the real embedder via Settings → AI. Downloading
+  // the bge-small files is a separate explicit step (33 MB). If the
+  // flag is on but files are missing, fall back to NoopEmbedder so the
+  // runtime still boots — BM25 still works and Settings shows what to
+  // do.
+  let useReal = await getUseRealEmbedder();
+  if (useReal) {
+    const status = await A.getEmbedderFileStatus();
+    if (!status.ready) useReal = false;
+  }
+  let embedder: A.Embedder;
+  try {
+    embedder = await A.getEmbedder(useReal);
+  } catch (err) {
+    console.warn('[meo] real embedder failed to load; falling back to noop', err);
+    embedder = await A.getEmbedder(false);
+  }
   const bm25 = new A.Bm25Index();
 
   // Vector store: prefer op-sqlite. If the native module isn't linked
