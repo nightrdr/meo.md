@@ -24,7 +24,7 @@ import {
   bytesToBase64, base64ToBytes, utf8Encode, utf8Decode, concat, uuidv4,
 } from './encoding.js';
 import type {
-  AttachmentMetadata, AttachmentRow, AttachmentSummary,
+  AttachmentMetadata, AttachmentRow, AttachmentSummary, Tier,
 } from './types.js';
 
 // ----------------------------------------------------------------------------
@@ -37,9 +37,60 @@ export const NONCE_BASE_BYTES = 8;
 export const CHUNK_INDEX_BYTES = 4;
 export const GCM_NONCE_BYTES = NONCE_BASE_BYTES + CHUNK_INDEX_BYTES; // 12
 
-export const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;       // 100 MiB plaintext
-export const MAX_ENCRYPTED_BYTES  = 110 * 1024 * 1024;       // server-side cap
-export const MAX_QUOTA_BYTES_PER_ACCOUNT = 10 * 1024 * 1024 * 1024; // 10 GiB
+// Legacy single-tier constants (Free-tier defaults). New code SHOULD use
+// `tierLimits(tier)` so the cap matches the user's plan; these remain as
+// safe fallbacks for code paths that don't yet have access to a session.
+// MAX_ATTACHMENT_BYTES = 10 MiB matches the Free tier.
+export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+export const MAX_ENCRYPTED_BYTES  = (10 * 1024 * 1024) + (10 * 1024); // ciphertext budget = plaintext + GCM tags
+export const MAX_QUOTA_BYTES_PER_ACCOUNT = 1 * 1024 * 1024 * 1024;    // 1 GiB (Free)
+
+// ----------------------------------------------------------------------------
+// Tier-aware limits (Agent 6).
+//
+// The canonical pricing matrix lives in mvp-development.md. This helper is the
+// single source of truth on the client; the server enforces the same numbers
+// in `meo.tier_limits()` (see migration `*_tier_limits.sql`). Keep the two in
+// sync — the server is authoritative and will reject over-cap writes with
+// SQLSTATE P0007 (per-attachment) or P0008 (workspace cap).
+// ----------------------------------------------------------------------------
+
+export interface TierLimits {
+  /** Max plaintext size of a single attachment, in bytes. */
+  maxAttachmentBytes: number;
+  /** Total storage cap for the account (notes + attachments), in bytes. */
+  totalStorageBytes: number;
+}
+
+const GIB = 1024 * 1024 * 1024;
+const TIB = 1024 * GIB;
+
+export function tierLimits(tier: Tier): TierLimits {
+  switch (tier) {
+    case 'free':
+      return { maxAttachmentBytes: 10 * 1024 * 1024, totalStorageBytes: 1 * GIB };
+    case 'hobbyist':
+      return { maxAttachmentBytes: 1 * GIB,          totalStorageBytes: 10 * GIB };
+    case 'business':
+      return { maxAttachmentBytes: 1 * GIB,          totalStorageBytes: 1 * TIB };
+    case 'enterprise':
+      // "Custom" — until provisioned individually, give the same headroom as Business.
+      return { maxAttachmentBytes: 1 * GIB,          totalStorageBytes: 1 * TIB };
+  }
+}
+
+/** Human-readable tier-aware error message used when a file is too large. */
+export function explainAttachmentTooLarge(tier: Tier, size: number): string {
+  const limits = tierLimits(tier);
+  const fileMb = (size / 1024 / 1024).toFixed(1);
+  const capMb = limits.maxAttachmentBytes >= GIB
+    ? `${(limits.maxAttachmentBytes / GIB).toFixed(0)} GB`
+    : `${(limits.maxAttachmentBytes / 1024 / 1024).toFixed(0)} MB`;
+  if (tier === 'free') {
+    return `This file (${fileMb} MB) exceeds your tier's ${capMb} limit. Upgrade to Hobbyist for up to 1 GB.`;
+  }
+  return `This file (${fileMb} MB) exceeds your tier's ${capMb} limit.`;
+}
 
 const UPLOAD_FN = 'attachments-upload-url';
 const DOWNLOAD_FN = 'attachments-download-url';

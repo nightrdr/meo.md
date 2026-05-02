@@ -1050,8 +1050,10 @@ export default function App() {
           wordCount={wordCount}
           modelId={modelId}
           notes={session.notes}
+          tier={getCurrentTier(session)}
           onChange={handleEditorChange}
           onDelete={() => handleDeleteNote(selected.id)}
+          onOpenSubscription={() => { setSettingsTab('subscription'); setSettingsOpen(true); }}
         />
       ) : (
         <div className="editor-pane">

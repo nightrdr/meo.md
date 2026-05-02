@@ -22,6 +22,20 @@ import {
 } from '@meo/shared';
 import { createClient } from '@supabase/supabase-js';
 
+// Heuristic mime sniff used by the URL-paste insert path. We trust the file
+// extension (no network probe), since the value is purely cosmetic — the
+// browser will pick the actual codec when it loads the URL.
+function mimeFromExt(url: string, fallback: string): string {
+  const m = url.toLowerCase().match(/\.([a-z0-9]+)(?:\?|#|$)/);
+  const ext = m?.[1];
+  if (!ext) return fallback;
+  const map: Record<string, string> = {
+    mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', ogv: 'video/ogg',
+    mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', ogg: 'audio/ogg', flac: 'audio/flac',
+  };
+  return map[ext] ?? fallback;
+}
+
 // ----------------------------------------------------------------------------
 // Session bridge.
 // App.tsx populates `(window as any).__meoAttachmentsContext` once the user
@@ -135,45 +149,7 @@ function AttachmentNodeView({ node }: NodeViewProps) {
 }
 
 function DecryptedImage({ attachmentId, alt }: { attachmentId: string; alt: string }) {
-  const [state, setState] = useState<
-    | { kind: 'loading' }
-    | { kind: 'ready'; url: string; metadata: AttachmentMetadata }
-    | { kind: 'error'; error: string }
-  >({ kind: 'loading' });
-
-  // Track the blob URL so we can revoke it on unmount.
-  const blobUrlRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setState({ kind: 'loading' });
-    (async () => {
-      const client = makeAttachmentsClient();
-      if (!client) {
-        if (!cancelled) setState({ kind: 'error', error: 'session not available' });
-        return;
-      }
-      try {
-        const { bytes, metadata } = await client.download(attachmentId);
-        if (cancelled) return;
-        const blob = new Blob([bytes], { type: metadata.mime_type });
-        const url = URL.createObjectURL(blob);
-        blobUrlRef.current = url;
-        setState({ kind: 'ready', url, metadata });
-      } catch (e: any) {
-        if (cancelled) return;
-        setState({ kind: 'error', error: String(e?.message ?? e) });
-      }
-    })();
-    return () => {
-      cancelled = true;
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-        blobUrlRef.current = null;
-      }
-    };
-  }, [attachmentId]);
-
+  const state = useDecryptedAttachment(attachmentId);
   if (state.kind === 'loading') {
     return (
       <span className="att-image att-loading">
@@ -198,4 +174,174 @@ function DecryptedImage({ attachmentId, alt }: { attachmentId: string; alt: stri
   );
 }
 
-export { ATTACHMENT_URL_PREFIX };
+// Shared decrypt-to-blob-URL hook — used by image, video, and audio node views.
+function useDecryptedAttachment(attachmentId: string):
+  | { kind: 'loading' }
+  | { kind: 'ready'; url: string; metadata: AttachmentMetadata }
+  | { kind: 'error'; error: string }
+{
+  const [state, setState] = useState<
+    | { kind: 'loading' }
+    | { kind: 'ready'; url: string; metadata: AttachmentMetadata }
+    | { kind: 'error'; error: string }
+  >({ kind: 'loading' });
+
+  const blobUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ kind: 'loading' });
+    (async () => {
+      const client = makeAttachmentsClient();
+      if (!client) {
+        if (!cancelled) setState({ kind: 'error', error: 'session not available' });
+        return;
+      }
+      try {
+        const { bytes, metadata } = await client.download(attachmentId);
+        if (cancelled) return;
+        // Use the metadata-recorded mime so the browser picks the right
+        // codec (mp4 vs webm, mp3 vs wav, etc.). Fall back to
+        // application/octet-stream if missing — the <video>/<audio>
+        // tag will then refuse to play, which is the correct signal.
+        const blob = new Blob([bytes as BlobPart], { type: metadata.mime_type || 'application/octet-stream' });
+        const url = URL.createObjectURL(blob);
+        blobUrlRef.current = url;
+        setState({ kind: 'ready', url, metadata });
+      } catch (e: any) {
+        if (cancelled) return;
+        setState({ kind: 'error', error: String(e?.message ?? e) });
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+    };
+  }, [attachmentId]);
+
+  return state;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Video — TipTap node for `<video src controls></video>`. Roundtrips
+// through markdown as raw HTML (CommonMark allows inline HTML), which
+// preserves both URL-pasted videos and `attachment:<id>` videos
+// without a custom syntax.
+// ────────────────────────────────────────────────────────────────────
+
+export const AttachmentVideoExtension = Node.create({
+  name: 'video',
+  group: 'block',
+  atom: true,
+  draggable: true,
+
+  addAttributes() {
+    return {
+      src: { default: null },
+      controls: { default: true },
+      'data-attachment-id': { default: null },
+    };
+  },
+
+  parseHTML() {
+    return [{ tag: 'video[src]' }];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ['video', mergeAttributes(HTMLAttributes, { controls: 'true' })];
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(VideoNodeView);
+  },
+});
+
+function VideoNodeView({ node }: NodeViewProps) {
+  const src: string = node.attrs.src ?? '';
+  const dataId: string | null = node.attrs['data-attachment-id'] ?? null;
+  const attachmentId = useMemo(() => dataId ?? parseAttachmentUrl(src), [src, dataId]);
+
+  if (!attachmentId) {
+    return (
+      <NodeViewWrapper as="div" className="att-media-wrap">
+        <video src={src} controls preload="metadata" />
+      </NodeViewWrapper>
+    );
+  }
+
+  return (
+    <NodeViewWrapper as="div" className="att-media-wrap">
+      <DecryptedMedia attachmentId={attachmentId} kind="video" />
+    </NodeViewWrapper>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Audio — same pattern as Video, just an <audio> element.
+// ────────────────────────────────────────────────────────────────────
+
+export const AttachmentAudioExtension = Node.create({
+  name: 'audio',
+  group: 'block',
+  atom: true,
+  draggable: true,
+
+  addAttributes() {
+    return {
+      src: { default: null },
+      controls: { default: true },
+      'data-attachment-id': { default: null },
+    };
+  },
+
+  parseHTML() {
+    return [{ tag: 'audio[src]' }];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ['audio', mergeAttributes(HTMLAttributes, { controls: 'true' })];
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(AudioNodeView);
+  },
+});
+
+function AudioNodeView({ node }: NodeViewProps) {
+  const src: string = node.attrs.src ?? '';
+  const dataId: string | null = node.attrs['data-attachment-id'] ?? null;
+  const attachmentId = useMemo(() => dataId ?? parseAttachmentUrl(src), [src, dataId]);
+
+  if (!attachmentId) {
+    return (
+      <NodeViewWrapper as="div" className="att-media-wrap">
+        <audio src={src} controls preload="metadata" />
+      </NodeViewWrapper>
+    );
+  }
+
+  return (
+    <NodeViewWrapper as="div" className="att-media-wrap">
+      <DecryptedMedia attachmentId={attachmentId} kind="audio" />
+    </NodeViewWrapper>
+  );
+}
+
+function DecryptedMedia({ attachmentId, kind }: { attachmentId: string; kind: 'video' | 'audio' }) {
+  const state = useDecryptedAttachment(attachmentId);
+  if (state.kind === 'loading') {
+    return <span className="att-image att-loading"><span className="att-spinner" /> Decrypting…</span>;
+  }
+  if (state.kind === 'error') {
+    return <span className="att-image att-error" title={state.error}>Failed to decrypt {kind}</span>;
+  }
+  if (kind === 'video') {
+    return <video className="att-media" src={state.url} controls preload="metadata" title={state.metadata.filename} />;
+  }
+  return <audio className="att-media" src={state.url} controls preload="metadata" title={state.metadata.filename} />;
+}
+
+export { ATTACHMENT_URL_PREFIX, mimeFromExt };

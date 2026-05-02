@@ -17,6 +17,23 @@ import { SupabaseApiClient, type SubscriptionRow, type Tier } from '@meo/shared'
 import { Icon } from '../Icon';
 import { type Session, refreshSubscription, getCurrentTier } from '../session';
 
+interface StorageUsage {
+  attachment_bytes: number;
+  note_bytes: number;
+  total_bytes: number;
+  cap_bytes: number;
+  max_attachment_bytes: number;
+}
+
+function formatBytes(n: number): string {
+  if (!n) return '0 B';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  if (n < 1024 * 1024 * 1024 * 1024) return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
+  return `${(n / 1024 / 1024 / 1024 / 1024).toFixed(2)} TB`;
+}
+
 interface Props {
   session: Session;
 }
@@ -40,6 +57,21 @@ export function Subscription({ session }: Props) {
   const [loading, setLoading] = useState<boolean>(row === undefined);
   const [error, setError] = useState<string | null>(null);
   const [tfaEnabled, setTfaEnabled] = useState<boolean | null>(null);
+  const [usage, setUsage] = useState<StorageUsage | null>(null);
+
+  // Load storage usage (Agent 6 — usage bar). Refreshes on tier change so
+  // the bar reflects the new cap immediately after upgrade.
+  useEffect(() => {
+    let alive = true;
+    if (!(session.api instanceof SupabaseApiClient)) {
+      setUsage(null);
+      return;
+    }
+    session.api.getStorageUsage()
+      .then(u => { if (alive) setUsage(u); })
+      .catch(() => { if (alive) setUsage(null); });
+    return () => { alive = false; };
+  }, [session, row]);
 
   // Probe 2FA status (Agent 8) for the side-badge on Business/Enterprise.
   useEffect(() => {
@@ -156,6 +188,15 @@ export function Subscription({ session }: Props) {
                     {source === 'revenuecat' && 'App Store / Play Store'}
                     {source === 'manual' && 'manual'}
                   </div>
+                </div>
+              </div>
+            )}
+
+            {usage && usage.cap_bytes > 0 && (
+              <div className="settings-row">
+                <div style={{ width: '100%' }}>
+                  <div className="settings-row-label">Storage</div>
+                  <StorageUsageBar usage={usage} />
                 </div>
               </div>
             )}
@@ -276,6 +317,33 @@ function UpgradeTierCard({ name, price, blurb, cta, highlight, onClick }: Upgrad
       <button className={`btn ${highlight ? 'primary' : ''}`} onClick={onClick}>
         {cta}
       </button>
+    </div>
+  );
+}
+
+// Storage usage bar (Agent 6 §3) — fills proportionally to total / cap.
+// Switches color when the user is in the "warn" or "over" zones so they
+// see they're approaching their limit before saves start failing.
+function StorageUsageBar({ usage }: { usage: StorageUsage }) {
+  const ratio = usage.cap_bytes > 0 ? Math.min(1, usage.total_bytes / usage.cap_bytes) : 0;
+  const cls = ratio >= 1 ? 'over' : ratio >= 0.85 ? 'warn' : '';
+  const pct = Math.round(ratio * 100);
+  return (
+    <div>
+      <div className="storage-usage-bar" role="progressbar"
+           aria-valuemin={0} aria-valuemax={usage.cap_bytes}
+           aria-valuenow={usage.total_bytes}>
+        <div className={`storage-usage-fill ${cls}`} style={{ width: `${pct}%` }} />
+      </div>
+      <div className="storage-usage-text">
+        {formatBytes(usage.total_bytes)} of {formatBytes(usage.cap_bytes)} used
+        {usage.total_bytes > 0 && (
+          <> · {formatBytes(usage.attachment_bytes)} attachments · {formatBytes(usage.note_bytes)} notes</>
+        )}
+        {usage.max_attachment_bytes > 0 && (
+          <> · max single file {formatBytes(usage.max_attachment_bytes)}</>
+        )}
+      </div>
     </div>
   );
 }

@@ -2424,3 +2424,185 @@ button, input, textarea, select { font: inherit; color: inherit; }
   background: var(--paper-deep);
   border-radius: 6px;
 }
+
+/* ─── Agent 6 — dictation, media insert, tier-aware upload ─── */
+
+/* Live dictation partial transcript: dotted underline, slight ghosting. */
+.meo-dictation-partial {
+  text-decoration: underline dotted;
+  text-decoration-color: var(--ai, #4f6b3a);
+  text-underline-offset: 3px;
+  opacity: 0.65;
+  font-style: italic;
+}
+
+/* Toolbar mic button — re-uses the existing toolbar btn styling but adds
+   a recording state (red dot + soft glow). */
+.dictation-btn {
+  position: relative;
+}
+.dictation-btn.dictating {
+  background: rgba(220, 53, 69, 0.08);
+  border-color: rgba(220, 53, 69, 0.3);
+}
+.dictation-rec-dot {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #e63946;
+  box-shadow: 0 0 0 0 rgba(230, 57, 70, 0.6);
+  animation: meo-dictation-pulse 1.2s ease-out infinite;
+}
+@keyframes meo-dictation-pulse {
+  0%   { box-shadow: 0 0 0 0   rgba(230, 57, 70, 0.55); }
+  70%  { box-shadow: 0 0 0 8px rgba(230, 57, 70, 0); }
+  100% { box-shadow: 0 0 0 0   rgba(230, 57, 70, 0); }
+}
+
+/* "Dictating…" status pill above the toolbar. */
+.dictation-pill {
+  position: sticky; top: 0;
+  align-self: center;
+  display: inline-flex; align-items: center; gap: 8px;
+  margin: 6px auto;
+  padding: 4px 10px;
+  background: rgba(230, 57, 70, 0.08);
+  color: #b32636;
+  border: 1px solid rgba(230, 57, 70, 0.25);
+  border-radius: 999px;
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.3px;
+  z-index: 5;
+}
+.dictation-pill .dictation-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #e63946;
+  animation: meo-dictation-pulse 1.2s ease-out infinite;
+}
+
+/* Decrypted media node (video/audio) wrapper. */
+.att-media-wrap {
+  display: block;
+  margin: 8px 0;
+}
+.att-media {
+  display: block;
+  max-width: 100%;
+  border-radius: 8px;
+  background: var(--paper-deep);
+}
+audio.att-media { width: 100%; }
+
+/* Upload-banner upgrade button — surfaced when the file is too large for
+   the user's tier. Sits next to the dismiss X. */
+.upload-banner-upgrade {
+  margin-left: 8px;
+  padding: 2px 10px;
+  background: var(--accent, #4f6b3a);
+  color: white;
+  border: none;
+  border-radius: 999px;
+  font-size: 11px; font-weight: 600;
+  cursor: pointer;
+}
+.upload-banner-upgrade:hover { filter: brightness(1.05); }
+
+/* Media insert modal (URL or file). */
+.media-modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(20, 18, 14, 0.45);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 200;
+}
+.media-modal {
+  width: min(440px, 92vw);
+  background: var(--paper);
+  border: 1px solid var(--paper-edge);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+.media-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px 8px;
+}
+.media-modal-header h3 { margin: 0; font-size: 14px; }
+.media-modal-close {
+  background: transparent; border: none; cursor: pointer;
+  color: var(--ink3); padding: 4px;
+}
+.media-modal-tabs {
+  display: flex; gap: 0;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--paper-edge);
+}
+.media-modal-tabs button {
+  background: transparent; border: none; cursor: pointer;
+  padding: 8px 14px;
+  font-size: 12px; font-weight: 600;
+  color: var(--ink3);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.media-modal-tabs button.on {
+  color: var(--ink);
+  border-bottom-color: var(--accent, #4f6b3a);
+}
+.media-modal-body {
+  padding: 14px 16px 16px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.media-modal-body label {
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 12px; color: var(--ink2);
+}
+.media-modal-body input[type="url"] {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--paper-edge);
+  border-radius: 8px;
+  background: var(--paper-deep);
+}
+.media-modal-hint {
+  margin: 0; font-size: 11px; color: var(--ink3); line-height: 1.5;
+}
+.media-modal-actions {
+  display: flex; justify-content: flex-end; gap: 8px;
+  margin-top: 4px;
+}
+.media-modal-actions button {
+  padding: 6px 14px;
+  border: 1px solid var(--paper-edge);
+  border-radius: 8px;
+  background: var(--paper-deep);
+  font-size: 12px; cursor: pointer;
+}
+.media-modal-actions button.primary {
+  background: var(--accent, #4f6b3a);
+  border-color: var(--accent, #4f6b3a);
+  color: white;
+}
+.media-modal-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Storage usage bar (Settings → Subscription). */
+.storage-usage-bar {
+  position: relative;
+  height: 10px; width: 100%;
+  background: var(--paper-deep);
+  border: 1px solid var(--paper-edge);
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 6px 0 4px;
+}
+.storage-usage-fill {
+  height: 100%;
+  background: var(--accent, #4f6b3a);
+  transition: width 240ms ease;
+}
+.storage-usage-fill.warn { background: #d49a3a; }
+.storage-usage-fill.over { background: #e63946; }
+.storage-usage-text {
+  font-size: 11px; color: var(--ink3); margin-top: 2px;
+}

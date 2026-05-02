@@ -8,17 +8,22 @@ import Table from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
+import { Mark } from '@tiptap/core';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { MathInline, MathBlock } from './editor/mathExtension';
 import { Mermaid } from './editor/mermaidExtension';
-import type { Note } from '@meo/shared';
-import { ATTACHMENT_URL_PREFIX, MAX_ATTACHMENT_BYTES } from '@meo/shared';
+import type { Note, Tier } from '@meo/shared';
+import { ATTACHMENT_URL_PREFIX, tierLimits, explainAttachmentTooLarge } from '@meo/shared';
 import { Icon } from './Icon';
 import { SlashMenu } from './SlashMenu';
-import { AttachmentImageExtension, makeAttachmentsClient } from './AttachmentRenderer';
+import {
+  AttachmentImageExtension, AttachmentVideoExtension, AttachmentAudioExtension,
+  makeAttachmentsClient,
+} from './AttachmentRenderer';
 import { getAIRuntime } from './aiStore';
 import { shortcut } from './platform';
+import { isDictationAvailable, startDictation, type DictationSession } from './dictation';
 import {
   MeoCollapseExtension,
   meoCollapsePluginKey,
@@ -40,8 +45,12 @@ interface Props {
   wordCount: number;
   modelId: string;
   notes: Map<string, Note>;
+  /** Current billing tier — used for client-side attachment size pre-validation. */
+  tier?: Tier;
   onChange: (next: Note) => void;
   onDelete: () => void;
+  /** Called when the user clicks the "Upgrade" link in the attachment-too-large banner. */
+  onOpenSubscription?: () => void;
 }
 
 type EditorMode = 'edit' | 'split' | 'preview';
@@ -76,6 +85,20 @@ function buildDecorationSet(doc: any, query: string, currentIndex: number): { de
   return { decos: DecorationSet.create(doc, decorations), total: i };
 }
 
+// Translucent / dotted-underline mark used for the live dictation
+// partial-transcript preview. Stripped from markdown serialization (the
+// final commit on each chunk replaces it with plain text) so it never
+// leaks into the saved body.
+const DictationPartialMark = Mark.create({
+  name: 'meoDictationPartial',
+  parseHTML() {
+    return [{ tag: 'span[data-meo-dictation="partial"]' }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['span', { ...HTMLAttributes, 'data-meo-dictation': 'partial', class: 'meo-dictation-partial' }, 0];
+  },
+});
+
 const FindExtension = Extension.create({
   name: 'meoFind',
   addProseMirrorPlugins() {
@@ -102,14 +125,32 @@ const FindExtension = Extension.create({
   },
 });
 
-export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId, notes, onChange, onDelete }: Props) {
+export function Editor({
+  note, breadcrumb, status, statusMsg, wordCount, modelId, notes,
+  tier = 'free', onChange, onDelete, onOpenSubscription,
+}: Props) {
   const lastNoteId = useRef(note.id);
   const [mode, setMode] = useState<EditorMode>('edit');
   const [tagInput, setTagInput] = useState('');
   const [showTagInput, setShowTagInput] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState<{ kind: 'idle' } | { kind: 'busy'; filename: string } | { kind: 'error'; message: string }>({ kind: 'idle' });
+  const [uploadStatus, setUploadStatus] = useState<{ kind: 'idle' } | { kind: 'busy'; filename: string } | { kind: 'error'; message: string; upgradable?: boolean }>({ kind: 'idle' });
   const [dropActive, setDropActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
+
+  // Media-insert popover (toolbar Video / Audio button → URL or File modal).
+  // `null` means closed; when open we track which media kind we're inserting.
+  const [mediaModal, setMediaModal] = useState<null | { kind: 'video' | 'audio' }>(null);
+
+  // Dictation state (Agent 6 §1). `dictationAvailable` is probed once at
+  // mount; the mic toolbar button is hidden when false.
+  const [dictationAvailable] = useState<boolean>(isDictationAvailable);
+  const [dictating, setDictating] = useState(false);
+  const dictationSessionRef = useRef<DictationSession | null>(null);
+  // Position + length of the live partial transcript currently inserted in
+  // the doc (so we can replace/clear it on each event).
+  const partialRef = useRef<{ from: number; length: number } | null>(null);
 
   // ── Find-in-note state ──
   const [findOpen, setFindOpen] = useState(false);
@@ -134,6 +175,8 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
       StarterKit.configure({}),
       Placeholder.configure({ placeholder: 'Start writing in markdown' }),
       AttachmentImageExtension,
+      AttachmentVideoExtension,
+      AttachmentAudioExtension,
       // Task list: stored as `<ul data-type="taskList"><li data-type="taskItem"
       // data-checked="true|false">…</li></ul>` and serialized to markdown
       // as `- [x] / - [ ]` by markdownFromHtml below.
@@ -153,6 +196,7 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
       Mermaid,
       FindExtension,
       MeoCollapseExtension,
+      DictationPartialMark,
     ],
     content: htmlFromMarkdown(note.body),
     onUpdate: ({ editor }) => {
@@ -170,11 +214,15 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
       setUploadStatus({ kind: 'error', message: 'Sign in to upload attachments' });
       return;
     }
+    const limits = tierLimits(tier);
     for (const file of list) {
-      if (file.size > MAX_ATTACHMENT_BYTES) {
+      // Tier-aware client-side pre-validation. The server enforces the same
+      // cap (SQLSTATE P0007) as a defense-in-depth measure.
+      if (file.size > limits.maxAttachmentBytes) {
         setUploadStatus({
           kind: 'error',
-          message: `${file.name} is larger than ${(MAX_ATTACHMENT_BYTES / 1024 / 1024).toFixed(0)} MiB`,
+          message: explainAttachmentTooLarge(tier, file.size),
+          upgradable: tier === 'free',
         });
         continue;
       }
@@ -190,7 +238,10 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
           dimensions,
         });
         const attachmentUrl = `${ATTACHMENT_URL_PREFIX}${result.id}`;
-        const isImage = (file.type || '').startsWith('image/');
+        const mime = file.type || '';
+        const isImage = mime.startsWith('image/');
+        const isVideo = mime.startsWith('video/');
+        const isAudio = mime.startsWith('audio/');
         if (isImage) {
           editor.chain().focus().insertContent({
             type: 'image',
@@ -200,18 +251,152 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
               'data-attachment-id': result.id,
             },
           }).run();
+        } else if (isVideo) {
+          editor.chain().focus().insertContent({
+            type: 'video',
+            attrs: { src: attachmentUrl, controls: true, 'data-attachment-id': result.id },
+          }).run();
+        } else if (isAudio) {
+          editor.chain().focus().insertContent({
+            type: 'audio',
+            attrs: { src: attachmentUrl, controls: true, 'data-attachment-id': result.id },
+          }).run();
         } else {
-          // For non-image attachments, drop a markdown-style link so the
-          // editor body still round-trips.
+          // Generic file — drop a markdown-style link so the editor body
+          // still round-trips.
           editor.chain().focus().insertContent(`[${file.name}](${attachmentUrl})`).run();
         }
         setUploadStatus({ kind: 'idle' });
       } catch (e: any) {
         console.error('attachment upload failed', e);
-        setUploadStatus({ kind: 'error', message: String(e?.message ?? e) });
+        // Surface the server-side too-large / quota errors as an upgradable
+        // banner so the user sees the same call-to-action as the client-side
+        // path.
+        const msg = String(e?.message ?? e);
+        const tooLarge = /attachment_too_large|attachment too large|413/.test(msg);
+        const overQuota = /storage_cap_exceeded|quota exceeded/.test(msg);
+        const friendly = tooLarge
+          ? explainAttachmentTooLarge(tier, file.size)
+          : overQuota
+            ? `You've used your tier's storage cap. ${tier === 'free' ? 'Upgrade for more space.' : 'Free up some attachments or contact support.'}`
+            : msg;
+        setUploadStatus({
+          kind: 'error',
+          message: friendly,
+          upgradable: tier === 'free' && (tooLarge || overQuota),
+        });
       }
     }
-  }, [editor, noteId]);
+  }, [editor, noteId, tier]);
+
+  // Insert a remote-URL video/audio without uploading. The URL is stored
+  // verbatim in the markdown body via the round-trip (raw <video>/<audio>
+  // HTML — see markdownFromHtml below).
+  const insertMediaFromUrl = useCallback((kind: 'video' | 'audio', url: string) => {
+    if (!editor) return;
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    editor.chain().focus().insertContent({
+      type: kind,
+      attrs: { src: trimmed, controls: true },
+    }).run();
+  }, [editor]);
+
+  // ── Dictation toggle (Agent 6 §1) ──
+  // Starts/stops a WebSpeech session and inserts text at the cursor.
+  // - `onPartial` shows a translucent live preview at the caret using a
+  //   transient inserted text run that we replace each result event.
+  // - `onFinal` commits a chunk: clears the partial, then inserts the
+  //   final text (plain) at the caret.
+  const stopDictation = useCallback(() => {
+    const sess = dictationSessionRef.current;
+    if (sess) sess.stop();
+    dictationSessionRef.current = null;
+    // Clear any leftover partial run (mark removed; commit happens on final).
+    if (editor && partialRef.current) {
+      const { from, length } = partialRef.current;
+      try {
+        editor.chain().focus()
+          .setTextSelection({ from, to: from + length })
+          .unsetMark('meoDictationPartial')
+          .deleteSelection()
+          .run();
+      } catch { /* the doc may have changed; partial is best-effort */ }
+      partialRef.current = null;
+    }
+    setDictating(false);
+  }, [editor]);
+
+  const toggleDictation = useCallback(() => {
+    if (dictating) { stopDictation(); return; }
+    if (!editor) return;
+    if (!isDictationAvailable()) return;
+    setDictating(true);
+    const sess = startDictation({
+      onPartial: (text) => {
+        if (!editor) return;
+        // Replace any previous partial with the new one, marked translucent.
+        const view = editor.view;
+        const tr = view.state.tr;
+        if (partialRef.current) {
+          tr.delete(partialRef.current.from, partialRef.current.from + partialRef.current.length);
+          partialRef.current = null;
+        }
+        const insertAt = tr.selection.from;
+        if (text) {
+          const markType = view.state.schema.marks.meoDictationPartial;
+          if (markType) {
+            tr.insertText(text, insertAt);
+            tr.addMark(insertAt, insertAt + text.length, markType.create());
+            partialRef.current = { from: insertAt, length: text.length };
+          } else {
+            // Fallback: plain insert if the mark type isn't registered.
+            tr.insertText(text, insertAt);
+            partialRef.current = { from: insertAt, length: text.length };
+          }
+        }
+        view.dispatch(tr);
+      },
+      onFinal: (text) => {
+        if (!editor) return;
+        const view = editor.view;
+        const tr = view.state.tr;
+        if (partialRef.current) {
+          tr.delete(partialRef.current.from, partialRef.current.from + partialRef.current.length);
+          partialRef.current = null;
+        }
+        const insertAt = tr.selection.from;
+        const trimmed = text.replace(/\s+$/, '') + ' ';
+        tr.insertText(trimmed, insertAt);
+        view.dispatch(tr);
+      },
+      onEnd: () => {
+        // Engine ended (silence / error / user stop). Reset state; the
+        // partial cleanup already happened in stopDictation if user-driven.
+        dictationSessionRef.current = null;
+        if (partialRef.current && editor) {
+          try {
+            editor.chain().focus()
+              .setTextSelection({ from: partialRef.current.from, to: partialRef.current.from + partialRef.current.length })
+              .deleteSelection()
+              .run();
+          } catch { /* ignore */ }
+          partialRef.current = null;
+        }
+        setDictating(false);
+      },
+    });
+    dictationSessionRef.current = sess;
+  }, [dictating, editor, stopDictation]);
+
+  // Stop dictation when switching notes or unmounting.
+  useEffect(() => {
+    return () => { dictationSessionRef.current?.stop(); };
+  }, []);
+  useEffect(() => {
+    if (dictating) stopDictation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note.id]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -443,8 +628,21 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
         }
       }
       if (e.key === 'Escape') {
+        if (dictating) { stopDictation(); e.stopPropagation(); e.preventDefault(); return; }
         if (bubble.kind !== 'idle') { cancelBubble(); e.stopPropagation(); e.preventDefault(); return; }
         if (findOpen) { setFindOpen(false); setFindQuery(''); e.stopPropagation(); e.preventDefault(); return; }
+        if (mediaModal) { setMediaModal(null); e.stopPropagation(); e.preventDefault(); return; }
+      }
+      // ⌃⌥D toggles dictation (works on macOS as Control+Option+D and on
+      // Win/Linux as Ctrl+Alt+D — we use the literal control flag so the
+      // shortcut sits next to other macOS-style "control + option" combos
+      // already in the app).
+      if (e.ctrlKey && e.altKey && (e.key === 'd' || e.key === 'D')) {
+        if (dictationAvailable) {
+          e.preventDefault();
+          toggleDictation();
+          return;
+        }
       }
       // ── Collapse / expand sections (Agent 4) ──
       // ⌥⌘← collapse current section, ⌥⌘→ expand current section.
@@ -467,7 +665,7 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
     };
     document.addEventListener('keydown', onKey, true); // capture phase
     return () => document.removeEventListener('keydown', onKey, true);
-  }, [bubble, findOpen, cancelBubble, editor]);
+  }, [bubble, findOpen, cancelBubble, editor, dictating, dictationAvailable, mediaModal, stopDictation, toggleDictation]);
 
   // ── Collapse menu-event bridge ──
   // App.tsx (via useMenuEvents) dispatches `meo:collapse-section`
@@ -543,10 +741,15 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
         mode={mode}
         setMode={setMode}
         onPickAttachment={() => fileInputRef.current?.click()}
+        onOpenVideo={() => setMediaModal({ kind: 'video' })}
+        onOpenAudio={() => setMediaModal({ kind: 'audio' })}
         onOpenFind={() => setFindOpen(true)}
         onSummarize={() => runAIBubble('summarize')}
         onProofread={() => runAIBubble('proofread')}
         bubbleRunning={bubble.kind === 'running' ? bubble.action : null}
+        dictationAvailable={dictationAvailable}
+        dictating={dictating}
+        onToggleDictation={toggleDictation}
       />
 
       {/* In-note find bar — ⌘F or toolbar button. Highlights matches via
@@ -595,12 +798,56 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
         ref={fileInputRef}
         type="file"
         multiple
+        accept=".png,.jpg,.jpeg,.gif,.webp,.svg,.avif,image/*"
         style={{ display: 'none' }}
         onChange={(e) => {
           if (e.target.files) void handleAttachmentFiles(e.target.files);
           e.target.value = '';
         }}
       />
+      <input
+        ref={videoInputRef}
+        type="file"
+        accept=".mp4,.webm,.mov,.ogv,video/*"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          if (e.target.files) void handleAttachmentFiles(e.target.files);
+          e.target.value = '';
+          setMediaModal(null);
+        }}
+      />
+      <input
+        ref={audioInputRef}
+        type="file"
+        accept=".mp3,.wav,.m4a,.ogg,.flac,audio/*"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          if (e.target.files) void handleAttachmentFiles(e.target.files);
+          e.target.value = '';
+          setMediaModal(null);
+        }}
+      />
+
+      {dictating && (
+        <div className="dictation-pill" role="status" aria-live="polite">
+          <span className="dictation-dot" />
+          Dictating… (Esc to stop)
+        </div>
+      )}
+
+      {mediaModal && (
+        <MediaInsertModal
+          kind={mediaModal.kind}
+          onClose={() => setMediaModal(null)}
+          onPickFile={() => {
+            (mediaModal.kind === 'video' ? videoInputRef : audioInputRef).current?.click();
+          }}
+          onSubmitUrl={(url) => {
+            insertMediaFromUrl(mediaModal.kind, url);
+            setMediaModal(null);
+          }}
+        />
+      )}
 
       <div
         className={`editor-body ${mode === 'split' ? 'split' : ''}${dropActive ? ' drop-active' : ''}`}
@@ -719,7 +966,16 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
         <div className={`upload-banner ${uploadStatus.kind}`}>
           {uploadStatus.kind === 'busy'
             ? `Encrypting and uploading ${uploadStatus.filename}…`
-            : `Upload error: ${uploadStatus.message}`}
+            : uploadStatus.message}
+          {uploadStatus.kind === 'error' && uploadStatus.upgradable && onOpenSubscription && (
+            <button
+              type="button"
+              className="upload-banner-upgrade"
+              onClick={() => { setUploadStatus({ kind: 'idle' }); onOpenSubscription(); }}
+            >
+              Upgrade
+            </button>
+          )}
           {uploadStatus.kind === 'error' && (
             <button
               type="button"
@@ -747,16 +1003,23 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
 }
 
 function Toolbar({
-  editor, mode, setMode, onPickAttachment, onOpenFind, onSummarize, onProofread, bubbleRunning,
+  editor, mode, setMode, onPickAttachment, onOpenVideo, onOpenAudio, onOpenFind,
+  onSummarize, onProofread, bubbleRunning,
+  dictationAvailable, dictating, onToggleDictation,
 }: {
   editor: TipTapEditor | null;
   mode: EditorMode;
   setMode: (m: EditorMode) => void;
   onPickAttachment: () => void;
+  onOpenVideo: () => void;
+  onOpenAudio: () => void;
   onOpenFind: () => void;
   onSummarize: () => void;
   onProofread: () => void;
   bubbleRunning: 'summarize' | 'proofread' | null;
+  dictationAvailable: boolean;
+  dictating: boolean;
+  onToggleDictation: () => void;
 }) {
   if (!editor) return <div className="editor-toolbar" style={{ height: 41 }} />;
 
@@ -888,6 +1151,22 @@ function Toolbar({
         }} />
       <Btn icon={<Icon.Image size={14} />} label="Insert image / file (encrypted upload)"
         onClick={onPickAttachment} />
+      <Btn icon={<Icon.Video size={14} />} label="Insert video (URL or file)"
+        onClick={onOpenVideo} />
+      <Btn icon={<Icon.Audio size={14} />} label="Insert audio (URL or file)"
+        onClick={onOpenAudio} />
+      {dictationAvailable && (
+        <button
+          type="button"
+          title={dictating ? 'Stop dictation' : 'Start dictation (Ctrl+Alt+D)'}
+          className={dictating ? 'dictation-btn dictating' : 'dictation-btn'}
+          onClick={onToggleDictation}
+        >
+          {dictating
+            ? <span className="dictation-rec-dot" aria-hidden />
+            : <Icon.Mic size={14} />}
+        </button>
+      )}
       <Btn icon={<Icon.Code size={14} />} label="Inline code"
         active={editor.isActive('code')}
         onClick={() => editor.chain().focus().toggleCode().run()} />
@@ -1164,6 +1443,20 @@ function htmlFromMarkdown(md: string): string {
     if (line.startsWith('###### ')) { closeList(); out.push(`<h6>${inline(line.slice(7))}</h6>`); continue; }
     if (line.startsWith('> ')) { closeList(); out.push(`<blockquote><p>${inline(line.slice(2))}</p></blockquote>`); continue; }
     if (/^---+$/.test(line)) { closeList(); out.push('<hr>'); continue; }
+    // ── Raw HTML video / audio (Agent 6 §2). CommonMark allows
+    // arbitrary inline HTML, so we just pass these through unchanged.
+    // Captured here so they're treated as block elements rather than
+    // wrapped inside a <p>. Any attribute order is preserved.
+    {
+      const mediaMatch = line.match(/^\s*<(video|audio)\s+([^>]*?)\s*(?:\/>|>\s*<\/\1>|>)\s*$/i);
+      if (mediaMatch) {
+        closeList();
+        const tag = mediaMatch[1].toLowerCase();
+        const attrs = mediaMatch[2] ?? '';
+        out.push(`<${tag} ${attrs}></${tag}>`);
+        continue;
+      }
+    }
     // Task-list items must be checked BEFORE the generic ulMatch.
     const taskMatch = line.match(/^[-*] \[([ xX])\] (.+)$/);
     if (taskMatch) {
@@ -1401,6 +1694,22 @@ function walk(node: Node): string {
         : ((el as HTMLImageElement).getAttribute('src') ?? '');
       return `![${alt}](${src})`;
     }
+    case 'video':
+    case 'audio': {
+      // Round-trip as raw HTML in markdown. CommonMark passes inline HTML
+      // through unchanged, so writing `<video src="..." controls></video>`
+      // on its own line is portable.
+      const tag = el.tagName.toLowerCase();
+      const id = (el as HTMLElement).getAttribute('data-attachment-id');
+      const src = id
+        ? `attachment:${id}`
+        : ((el as HTMLElement).getAttribute('src') ?? '');
+      // Always emit `controls` so the saved markdown stays interactive
+      // when re-opened on another client; the renderer NodeView also
+      // forces it.
+      const dataAttr = id ? ` data-attachment-id="${id}"` : '';
+      return `\n<${tag} src="${escapeAttr(src)}" controls${dataAttr}></${tag}>\n`;
+    }
     case 'a': {
       const href = (el as HTMLAnchorElement).getAttribute('href') ?? '';
       return `[${inner}](${href})`;
@@ -1498,4 +1807,100 @@ function diffWords(a: string, b: string): DiffTok[] {
     else coalesced.push({ ...t });
   }
   return coalesced;
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Media insert modal — small URL-or-file picker for the Video / Audio
+// toolbar buttons. URL inserts render as a raw <video>/<audio> tag in
+// the markdown body (CommonMark passes raw HTML through). File picks
+// reuse the existing E2EE attachment pipeline.
+// ──────────────────────────────────────────────────────────────────────
+
+function MediaInsertModal({
+  kind, onClose, onPickFile, onSubmitUrl,
+}: {
+  kind: 'video' | 'audio';
+  onClose: () => void;
+  onPickFile: () => void;
+  onSubmitUrl: (url: string) => void;
+}) {
+  const [tab, setTab] = useState<'url' | 'file'>('url');
+  const [url, setUrl] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, [tab]);
+
+  const submit = () => {
+    if (!url.trim()) return;
+    onSubmitUrl(url.trim());
+  };
+
+  const labelKind = kind === 'video' ? 'Video' : 'Audio';
+
+  return (
+    <div className="media-modal-overlay" onMouseDown={onClose} role="dialog" aria-modal>
+      <div className="media-modal" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="media-modal-header">
+          <h3>Insert {labelKind}</h3>
+          <button type="button" className="media-modal-close" onClick={onClose}>
+            <Icon.X size={12} />
+          </button>
+        </div>
+        <div className="media-modal-tabs">
+          <button
+            type="button"
+            className={tab === 'url' ? 'on' : ''}
+            onClick={() => setTab('url')}
+          >From URL</button>
+          <button
+            type="button"
+            className={tab === 'file' ? 'on' : ''}
+            onClick={() => setTab('file')}
+          >From file</button>
+        </div>
+        {tab === 'url' && (
+          <div className="media-modal-body">
+            <label>
+              <span>{labelKind} URL</span>
+              <input
+                ref={inputRef}
+                type="url"
+                placeholder={kind === 'video' ? 'https://example.com/clip.mp4' : 'https://example.com/track.mp3'}
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); submit(); }
+                  if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+                }}
+              />
+            </label>
+            <p className="media-modal-hint">
+              The URL is stored as plain text in your note — no upload, no encryption.
+              Paste links from the open web or your own server.
+            </p>
+            <div className="media-modal-actions">
+              <button type="button" onClick={onClose}>Cancel</button>
+              <button type="button" className="btn primary" onClick={submit} disabled={!url.trim()}>
+                Insert
+              </button>
+            </div>
+          </div>
+        )}
+        {tab === 'file' && (
+          <div className="media-modal-body">
+            <p className="media-modal-hint">
+              Upload a {kind} file. It's encrypted on your device before upload — the server never sees the bytes or filename.
+              Accepted: {kind === 'video' ? 'mp4, webm, mov, ogv' : 'mp3, wav, m4a, ogg, flac'}.
+            </p>
+            <div className="media-modal-actions">
+              <button type="button" onClick={onClose}>Cancel</button>
+              <button type="button" className="btn primary" onClick={onPickFile}>
+                Choose file…
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }

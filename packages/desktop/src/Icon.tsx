@@ -83,6 +83,12 @@ export const Icon = {
   Download: (p: IconProps) => <I {...p}><path d="M12 4v12M7 11l5 5 5-5M5 20h14"/></I>,
   // Summary: lines with a star representing distilled text
   Summary: (p: IconProps) => <I {...p}><path d="M4 8h12M4 12h10M4 16h7"/><path d="m18 14 1.2 2.5L22 17l-2 1.7.5 2.6-2.5-1.4-2.5 1.4.5-2.6L14 17l2.8-.5L18 14z"/></I>,
+  // Mic: pill-shaped capsule on a stand — the usual dictation glyph.
+  Mic: (p: IconProps) => <I {...p}><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></I>,
+  // Video: a film frame with a play triangle inside.
+  Video: (p: IconProps) => <I {...p}><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3z"/></I>,
+  // Audio: a stylized waveform — three vertical bars of varying height.
+  Audio: (p: IconProps) => <I {...p}><path d="M5 10v4M9 7v10M13 4v16M17 8v8M21 11v2"/></I>,
 };
 
 // Logo mark — Meo: a filleted-square "M" notch in warm ink with a green accent dot

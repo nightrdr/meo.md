@@ -370,6 +370,30 @@ export class SupabaseApiClient {
     return body;
   }
 
+  // Read the caller's storage usage (Agent 6). Returns the per-account totals
+  // calculated server-side via meo.storage_usage(). RLS-safe.
+  async getStorageUsage(): Promise<{
+    attachment_bytes: number;
+    note_bytes: number;
+    total_bytes: number;
+    cap_bytes: number;
+    max_attachment_bytes: number;
+  }> {
+    const { data, error } = await this.sb.rpc('storage_usage');
+    if (error) throw mapPgError(error as any);
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) {
+      return { attachment_bytes: 0, note_bytes: 0, total_bytes: 0, cap_bytes: 0, max_attachment_bytes: 0 };
+    }
+    return {
+      attachment_bytes: Number(row.attachment_bytes ?? 0),
+      note_bytes: Number(row.note_bytes ?? 0),
+      total_bytes: Number(row.total_bytes ?? 0),
+      cap_bytes: Number(row.cap_bytes ?? 0),
+      max_attachment_bytes: Number(row.max_attachment_bytes ?? 0),
+    };
+  }
+
   // Read the caller's subscription row. Returns null if no row exists yet
   // (treat as `tier: 'free'`). RLS guarantees we only ever see auth.uid()'s
   // own row; a different user's row would simply not appear.
@@ -408,7 +432,16 @@ function mapPgError(error: { code?: string; message?: string }): ApiError {
   //   28000 = unauthorized (raised when auth.uid() is null)
   //   P0002 = not found (raised in delete_note)
   //   23505 = unique_violation (account already exists)
+  //   P0007 = attachment_too_large (Agent 6 — file > tier max)
+  //   P0008 = storage_cap_exceeded (Agent 6 — workspace > tier total)
+  //   P0009 = device_cap_exceeded (Agent 9 — too many devices)
   if (code === '40001' || msg.includes('stale write')) return new ApiError(409, { error: msg });
+  if (code === 'P0007' || msg.includes('attachment_too_large')) {
+    return new ApiError(413, { error: 'attachment_too_large', code: 'attachment_too_large' });
+  }
+  if (code === 'P0008' || msg.includes('storage_cap_exceeded') || msg.includes('quota exceeded')) {
+    return new ApiError(413, { error: 'storage_cap_exceeded', code: 'storage_cap_exceeded' });
+  }
   if (code === 'P0009' || msg.includes('device_cap_exceeded')) return new ApiError(429, { error: 'device_cap_exceeded', code: 'device_cap_exceeded' });
   if (code === '42501' || msg.includes('forbidden')) return new ApiError(403, { error: msg });
   if (code === '28000' || msg.includes('unauthorized')) return new ApiError(401, { error: msg });
