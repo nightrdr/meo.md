@@ -154,6 +154,50 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
     setBusy(false);
   }
 
+  /**
+   * Wrap masterRaw with a fresh per-device wrap_key, persist the
+   * ciphertext blob in IndexedDB, and stash the wrap_key in the OS
+   * keychain behind the userPresence ACL. Used by both the new-user
+   * (continuePastSecret) and returning-user (handleUnlock) paths so
+   * biometric is enrolled identically in both. Failures are non-fatal
+   * - the user has a valid session, biometric is just convenience.
+   */
+  async function maybeEnrollBiometric(masterRaw: Uint8Array): Promise<void> {
+    if (!(biometricOptIn && biometricShown)) {
+      // Explicit opt-out (or platform doesn't support it) - clear any
+      // stale blob from a previous device/session so cold-start
+      // routing doesn't get confused.
+      await setMeta({
+        master_wrap_blob: undefined,
+        master_wrap_nonce: undefined,
+        biometric_enabled: false,
+      });
+      await clearWrapKey();
+      return;
+    }
+    try {
+      const { keyB64, blob, nonce } = await wrapMasterRaw(masterRaw);
+      await setMeta({
+        master_wrap_blob: blob,
+        master_wrap_nonce: nonce,
+        biometric_enabled: true,
+      });
+      // saveWrapKey triggers the OS biometric-setup prompt on macOS
+      // ("Allow Meo to use Touch ID"). A failure here typically means
+      // the user denied permission - flip the flag back off so the
+      // next cold start doesn't show the biometric screen.
+      await saveWrapKey(keyB64);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('biometric setup failed (continuing without):', e);
+      await setMeta({
+        master_wrap_blob: undefined,
+        master_wrap_nonce: undefined,
+        biometric_enabled: false,
+      });
+    }
+  }
+
   // ── Step 3a (new user): pick a passphrase, generate Secret Key ──
   async function handleSetupEncryption(e: React.FormEvent) {
     e.preventDefault();
@@ -197,41 +241,7 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
         notes: new Map(), syncCursor: 0,
         hlc: { ms: Date.now(), counter: 0 },
       };
-      // Best-effort biometric setup. Two opt-out cases:
-      //   1) the user unchecked the toggle on this screen
-      //   2) the platform doesn't support biometric (Linux / browser)
-      if (biometricOptIn && biometricShown) {
-        try {
-          const { keyB64, blob, nonce } = await wrapMasterRaw(masterRaw);
-          await setMeta({
-            master_wrap_blob: blob,
-            master_wrap_nonce: nonce,
-            biometric_enabled: true,
-          });
-          // saveWrapKey triggers the OS biometric-setup prompt on
-          // macOS ("Allow Meo to use Touch ID"). Failures here mean
-          // the user denied permission - flip the flag back off so
-          // the next cold start doesn't show the biometric screen.
-          await saveWrapKey(keyB64);
-        } catch (e) {
-          // eslint-disable-next-line no-console
-          console.warn('biometric setup failed (continuing without):', e);
-          await setMeta({
-            master_wrap_blob: undefined,
-            master_wrap_nonce: undefined,
-            biometric_enabled: false,
-          });
-        }
-      } else {
-        // User explicitly opted out - make sure no stale blob remains
-        // from a previous session.
-        await setMeta({
-          master_wrap_blob: undefined,
-          master_wrap_nonce: undefined,
-          biometric_enabled: false,
-        });
-        await clearWrapKey();
-      }
+      await maybeEnrollBiometric(masterRaw);
       onAuthenticated(session);
     } catch {
       handleErr(new Error('Couldn\'t unlock - check your passphrase and Secret Key.'));
@@ -382,10 +392,19 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
     setPairBusy(false);
   }
 
-  function continuePastSecret() {
+  async function continuePastSecret() {
     const session = (window as any).__pendingSession as Session | undefined;
     if (!session) return;
     delete (window as any).__pendingSession;
+    // First sign-in: enroll biometric here (returning users do it in
+    // handleUnlock). Without this, new accounts never get a wrap blob
+    // so cold-start routing falls through to email-OTP every restart.
+    setBusy(true);
+    try {
+      await maybeEnrollBiometric(session.masterRaw);
+    } finally {
+      setBusy(false);
+    }
     onAuthenticated(session);
   }
 
@@ -591,9 +610,19 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
             >
               <Icon.Copy size={12} style={{ verticalAlign: -1, marginRight: 6 }} /> Copy to clipboard
             </button>
+            {biometricShown && (
+              <label className="checkbox-row" style={{ marginTop: 18 }}>
+                <input
+                  type="checkbox"
+                  checked={biometricOptIn}
+                  onChange={(e) => setBiometricOptIn(e.target.checked)}
+                />
+                <span>Enable {biometricButtonLabel().replace(/^Unlock with /, '')} on this device</span>
+              </label>
+            )}
             <div className="actions" style={{ marginTop: 24 }}>
-              <button className="btn primary" onClick={continuePastSecret} style={{ flex: 1 }}>
-                I've saved it, continue
+              <button className="btn primary" onClick={continuePastSecret} disabled={busy} style={{ flex: 1 }}>
+                {busy ? 'Setting up…' : "I've saved it, continue"}
               </button>
             </div>
           </div>
