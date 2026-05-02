@@ -22,7 +22,7 @@
 // (cut/copy/paste/quit/etc.) are handled by AppKit directly and don't
 // fire menu events - that's the whole point of using them.
 
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 mod biometric;
 
@@ -50,6 +50,23 @@ pub fn run() {
             // handler - AppKit consumes them - so anything we see here
             // is one of our `MenuItem::with_id` ids.
             let id = event.id().as_ref().to_string();
+
+            // "toggle-devtools" is handled in Rust because the JS API
+            // doesn't expose webview.open_devtools() in @tauri-apps/api.
+            // We need it from a menu item (rather than e.g. a keyboard
+            // listener in JS) because our custom macOS menu otherwise
+            // replaces the default Cmd+Opt+I binding entirely.
+            if id == "toggle-devtools" {
+                if let Some(win) = app.get_webview_window("main") {
+                    if win.is_devtools_open() {
+                        win.close_devtools();
+                    } else {
+                        win.open_devtools();
+                    }
+                }
+                return;
+            }
+
             let topic = format!("menu://{id}");
             // Best-effort emit. If the webview isn't ready yet (very
             // early menu click during startup) the event is dropped;
@@ -218,6 +235,18 @@ fn build_macos_menu<R: tauri::Runtime>(
             &MenuItem::with_id(app, "ask-meo", "Ask Meo", true, Some("CmdOrCtrl+/"))?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::fullscreen(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            // Restore Web Inspector access. Our custom menu replaced
+            // the default View menu (which Tauri 2 ships with this
+            // built in), so without an explicit item here Cmd+Opt+I
+            // has no binding and devtools never opens.
+            &MenuItem::with_id(
+                app,
+                "toggle-devtools",
+                "Toggle Developer Tools",
+                true,
+                Some("Alt+CmdOrCtrl+I"),
+            )?,
         ],
     )?;
 

@@ -179,23 +179,33 @@ export function AIPanel({ notes, modelId, onClose, onOpenNote, applyToolCall }: 
    * `toolCalls[callIdx].state` of that message in place.
    */
   const decideToolCall = useCallback(async (
-    messageIdx: number, callIdx: number, accept: boolean,
+    messageIdx: number, callIdx: number, accept: boolean, call: A.NoteToolCall,
   ) => {
-    // Snap the entry into 'applying' (or straight to 'rejected') so the
-    // UI disables both buttons immediately.
-    let toApply: A.NoteToolCall | null = null;
+    // We take `call` as an argument from the chip (which holds it in
+    // props) instead of reading it from React state. The previous
+    // version did `let toApply; setMessages(prev => { toApply = ... })`
+    // and then `await applyToolCall(toApply)` - but React 18 doesn't
+    // run updater functions synchronously, so toApply was usually still
+    // null when we got to the await. Result: the chip stuck at
+    // 'applying' forever because the await branch never fired.
     setMessages(prev => prev.map((m, i) => {
       if (i !== messageIdx || !m.toolCalls) return m;
       const next = m.toolCalls.map((tc, j): ToolCallEntry => {
         if (j !== callIdx) return tc;
         if (!accept) return { ...tc, state: { status: 'rejected' } };
-        toApply = tc.call;
         return { ...tc, state: { status: 'applying' } };
       });
       return { ...m, toolCalls: next };
     }));
-    if (!accept || !toApply) return;
-    const result = await applyToolCall(toApply);
+    if (!accept) return;
+    let result: { ok: true; resultId: string | null } | { ok: false; error: string };
+    try {
+      result = await applyToolCall(call);
+    } catch (e) {
+      // applyToolCall is supposed to return {ok:false} on failure, but
+      // catch a thrown error too so the chip never sticks at 'applying'.
+      result = { ok: false, error: (e as Error).message ?? String(e) };
+    }
     setMessages(prev => prev.map((m, i) => {
       if (i !== messageIdx || !m.toolCalls) return m;
       const next = m.toolCalls.map((tc, j): ToolCallEntry => {
@@ -288,7 +298,7 @@ export function AIPanel({ notes, modelId, onClose, onOpenNote, applyToolCall }: 
                 m={m}
                 notes={notes}
                 onOpenNote={onOpenNote}
-                onDecideToolCall={(callIdx, accept) => decideToolCall(i, callIdx, accept)}
+                onDecideToolCall={(callIdx, accept, call) => decideToolCall(i, callIdx, accept, call)}
               />
             ))}
           </div>
@@ -335,7 +345,7 @@ function MessageView({
   m: Message;
   notes: Map<string, Note>;
   onOpenNote: (id: string) => void;
-  onDecideToolCall: (callIdx: number, accept: boolean) => void;
+  onDecideToolCall: (callIdx: number, accept: boolean, call: A.NoteToolCall) => void;
 }) {
   if (m.role === 'user') {
     return <div className="ai-msg-user">{m.text}</div>;
@@ -387,8 +397,8 @@ function MessageView({
               key={j}
               entry={tc}
               notes={notes}
-              onAccept={() => onDecideToolCall(j, true)}
-              onReject={() => onDecideToolCall(j, false)}
+              onAccept={() => onDecideToolCall(j, true, tc.call)}
+              onReject={() => onDecideToolCall(j, false, tc.call)}
               onOpenNote={onOpenNote}
             />
           ))}
