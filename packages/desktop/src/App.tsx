@@ -26,7 +26,11 @@ import { Mod, shortcut, isMac, isWindows } from './platform';
 import { SupabaseApiClient, uuidv4 } from '@meo/shared';
 import { setAttachmentsContext } from './AttachmentRenderer';
 import { supabaseUrl, supabaseAnonKey } from './session';
-import { useMenuEvents, type MenuHandlers } from './menus';
+import { useMenuEvents, type MenuHandlers, type ExportFormat } from './menus';
+import {
+  exportNoteAsMarkdown, exportNoteAsHTML, exportNoteAsTXT,
+  exportNoteAsDOCX, exportNoteAsPDF,
+} from './export';
 
 type Status = 'idle' | 'syncing' | 'saving' | 'error';
 
@@ -61,6 +65,11 @@ export default function App() {
   const [selectedFolder, setSelectedFolder] = useState<string>('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Mirror of `selectedId` for use inside callbacks captured by
+  // useMemo/useCallback that don't list `selectedId` in their deps —
+  // avoids stale-closure issues for the native-menu export handler.
+  const selectedIdRef = useRef<string | null>(null);
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
   const [status, setStatus] = useState<Status>('idle');
   const [statusMsg, setStatusMsg] = useState<string>('');
   const [emptyFolders, setEmptyFolders] = useState<string[]>([]);
@@ -610,6 +619,17 @@ export default function App() {
           catch (e) { setStatus('error'); setStatusMsg(`Unlock failed: ${(e as Error).message}`); }
         }},
       { separator: true },
+      // Export submenu (Agent 2). Locked vault notes still expose
+      // the menu but the exporter sees the encrypted body — the user
+      // is expected to unlock first; we don't unlock on their behalf.
+      { label: 'Export as', icon: 'Download', disabled: locked, items: [
+        { label: 'Markdown',   icon: 'Note', onClick: () => { void exportNoteAsMarkdown(note); } },
+        { label: 'PDF',        icon: 'Note', onClick: () => { void exportNoteAsPDF(note); } },
+        { label: 'DOCX',       icon: 'Note', onClick: () => { void exportNoteAsDOCX(note); } },
+        { label: 'Plain Text', icon: 'Note', onClick: () => { void exportNoteAsTXT(note); } },
+        { label: 'HTML',       icon: 'Note', onClick: () => { void exportNoteAsHTML(note); } },
+      ]},
+      { separator: true },
       { label: 'Delete note', icon: 'Trash', danger: true, onClick: () => handleDeleteNote(note.id) },
     ];
   }, [session, handleDeleteNote, refresh]);
@@ -742,8 +762,33 @@ export default function App() {
     onExpandAllSections: () => document.dispatchEvent(new CustomEvent('meo:expand-all')),
     // QR pairing (Agent 9) — File ▸ New Device opens the modal.
     onNewDevice: () => setPairingOpen(true),
-    // export/import/print/insert-link/new-tag intentionally omitted —
-    // useMenuEvents will console.warn until those ship.
+    // File ▸ Export (Agent 2) — fires for the currently-selected note.
+    // We can't read `selected` from inside this useMemo without a stale
+    // closure issue, so we look up the current selection via a ref-less
+    // closure on `session.notes` + `selectedId` at click time.
+    onExport: (format: ExportFormat) => {
+      const id = selectedIdRef.current;
+      if (!id || !session) {
+        // eslint-disable-next-line no-console
+        console.warn('[meo] export menu: no note selected');
+        return;
+      }
+      const note = session.notes.get(id);
+      if (!note) {
+        // eslint-disable-next-line no-console
+        console.warn('[meo] export menu: selected note not found:', id);
+        return;
+      }
+      switch (format) {
+        case 'md':   void exportNoteAsMarkdown(note); break;
+        case 'pdf':  void exportNoteAsPDF(note); break;
+        case 'docx': void exportNoteAsDOCX(note); break;
+        case 'txt':  void exportNoteAsTXT(note); break;
+        case 'html': void exportNoteAsHTML(note); break;
+      }
+    },
+    // import/print/insert-link/new-tag intentionally omitted — useMenuEvents
+    // will console.warn until those ship.
   }), [
     handleNew, startCreateFolder, aiOn, dispatchFind, toggleSidebar, session, refresh,
   ]);

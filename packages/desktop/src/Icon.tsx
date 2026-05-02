@@ -75,6 +75,12 @@ export const Icon = {
   // Sidebar: a rounded rectangle with a vertical divider near the left,
   // matching the macOS Notes show/hide-sidebar glyph.
   Sidebar: (p: IconProps) => <I {...p}><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M9 5v14"/></I>,
+  // Math (KaTeX): a stylized "Σ" sigma, the math-button glyph in many editors.
+  Math: (p: IconProps) => <I {...p}><path d="M18 5H6l6 7-6 7h12"/></I>,
+  // Mermaid (diagram): two connected boxes — "node → node".
+  Diagram: (p: IconProps) => <I {...p}><rect x="3" y="4" width="7" height="6" rx="1"/><rect x="14" y="14" width="7" height="6" rx="1"/><path d="M10 7h4M14 17h-4M10 7c2 0 4 2 4 5v5"/></I>,
+  // Download: a tray + downward arrow — for the export submenu icon.
+  Download: (p: IconProps) => <I {...p}><path d="M12 4v12M7 11l5 5 5-5M5 20h14"/></I>,
   // Summary: lines with a star representing distilled text
   Summary: (p: IconProps) => <I {...p}><path d="M4 8h12M4 12h10M4 16h7"/><path d="m18 14 1.2 2.5L22 17l-2 1.7.5 2.6-2.5-1.4-2.5 1.4.5-2.6L14 17l2.8-.5L18 14z"/></I>,
 };

@@ -884,6 +884,100 @@ button, input, textarea, select { font: inherit; color: inherit; }
   max-width: none; margin: 0;
 }
 
+/* ─── Tables ────────────────────────────────────────────── */
+
+.editor-canvas table {
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  width: auto;
+  table-layout: auto;
+}
+.editor-canvas th, .editor-canvas td {
+  border: 1px solid var(--paper-edge);
+  padding: 6px 12px;
+  vertical-align: top;
+  min-width: 60px;
+  position: relative;
+}
+.editor-canvas th {
+  background: var(--paper-edge);
+  font-weight: 600;
+  text-align: left;
+}
+.editor-canvas tr td.selectedCell, .editor-canvas tr th.selectedCell {
+  background: rgba(79, 107, 58, 0.10);
+}
+
+/* ─── KaTeX math ────────────────────────────────────────── */
+
+.meo-math.meo-math-inline {
+  display: inline-block;
+  cursor: default;
+}
+.meo-math.meo-math-block {
+  display: block;
+  margin: 1em 0;
+  text-align: center;
+  cursor: default;
+}
+.meo-math.ProseMirror-selectednode {
+  outline: 2px solid var(--accent, #4f6b3a);
+  border-radius: 3px;
+}
+.meo-math-error {
+  color: var(--danger, #c4553f);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+
+/* ─── Mermaid block ─────────────────────────────────────── */
+
+.meo-mermaid-block {
+  margin: 1em 0;
+  border: 1px solid var(--paper-edge);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg, #faf8f3);
+}
+.meo-mermaid-source {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--paper-edge);
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  background: rgba(0, 0, 0, 0.02);
+  color: var(--ink2);
+  resize: vertical;
+}
+.meo-mermaid-source:focus { outline: none; }
+.meo-mermaid-output {
+  padding: 12px;
+  text-align: center;
+  min-height: 40px;
+}
+.meo-mermaid-output svg { max-width: 100%; height: auto; }
+.meo-mermaid-empty,
+.meo-mermaid-error {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink3);
+}
+.meo-mermaid-error {
+  color: var(--danger, #c4553f);
+  white-space: pre-wrap;
+  text-align: left;
+}
+
+/* ─── Submenu (nested context menu) ─────────────────────── */
+
+.ctx-submenu {
+  /* Override the parent's `.ctx-menu { position: fixed }` is fine —
+     our component sets explicit left/top via inline style. */
+  z-index: 210;
+}
+
 /* ─── Context menu ──────────────────────────────────────── */
 
 .ctx-menu {
