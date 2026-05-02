@@ -82,6 +82,17 @@ Rules:
 - At most ${MAX_TOOL_CALLS_PER_TURN} actions per turn.
 - The natural-language part of your reply should still answer the
   user's question or describe what you're proposing.
+- NEVER refuse a mutation by describing yourself or your role. Just
+  emit the action; the user will confirm before it lands.
+
+Example. User: "create a note titled 'Grocery list' with milk, eggs, bread".
+Reply:
+
+I'll create that note for you.
+
+\`\`\`meo-actions
+{ "actions": [ { "type": "create", "title": "Grocery list", "body": "- milk\\n- eggs\\n- bread" } ] }
+\`\`\`
 `.trim();
 
 /** Regex anchors for the meo-actions fence. Tolerant to surrounding

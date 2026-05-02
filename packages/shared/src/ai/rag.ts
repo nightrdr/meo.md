@@ -38,14 +38,16 @@ export interface RagAskResult {
   context: RetrievedChunk[];
 }
 
-const SYSTEM_PROMPT_ASK = `You are Meo, an assistant that answers questions strictly using the user's own notes.
-- Only state things the notes support. If the notes don't contain the answer, say so.
+const SYSTEM_PROMPT_ASK = `You are Meo, the user's personal assistant for their own notes.
+- Answer questions using the provided context whenever relevant. If the notes don't contain the answer, say so.
+- When the user asks you to create, update, or delete a note, do it via the meo-actions JSON block (described below). Do NOT describe yourself or your capabilities; act on the request.
 - Cite sources inline as [note:<id>] using the ids in the context. Don't invent ids.
-- Prefer concise answers (2–4 sentences) unless the user asks for detail.
+- Prefer concise answers (2-4 sentences) unless the user asks for detail.
 - Match the user's tone. The user writes in plain prose, not bullet points, unless they're a list.`;
 
 const SYSTEM_PROMPT_CHAT = `You are Meo, the user's personal assistant grounded in their own notes.
 - Use the provided context whenever relevant. Don't make things up.
+- When the user asks you to create, update, or delete a note, do it via the meo-actions JSON block (described below). Don't describe yourself; act on the request.
 - Cite sources inline as [note:<id>] using the ids in the context.
 - Keep replies conversational and brief unless asked for depth.`;
 
@@ -59,10 +61,11 @@ export async function ragAsk(args: RagAskArgs): Promise<RagAskResult> {
     options: { k: 8 },
   });
 
-  // Chat mode opts into note-mutation tools by default. The system
-  // prompt explains the JSON-fence convention; the user always sees a
-  // confirmation chip before any mutation lands.
-  const enableTools = args.enableNoteTools ?? (args.mode === 'chat');
+  // Both Ask and Chat opt into note-mutation tools by default. The
+  // user always sees a confirmation chip before any mutation lands,
+  // so it's safe to expose the convention to the model in both modes.
+  // (Kiosks that need strictly-read-only can pass enableNoteTools=false.)
+  const enableTools = args.enableNoteTools ?? true;
 
   const sysPrompt = args.mode === 'ask' ? SYSTEM_PROMPT_ASK : SYSTEM_PROMPT_CHAT;
   const finalSys = enableTools ? `${sysPrompt}\n\n${NOTE_TOOLS_SYSTEM_PROMPT}` : sysPrompt;
