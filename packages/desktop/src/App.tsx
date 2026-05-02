@@ -158,6 +158,19 @@ export default function App() {
         let hasValidJwt = !!meta.jwt && !!exp && Date.now() < exp;
         const hasWrap = !!meta.master_wrap_blob && !!meta.master_wrap_nonce;
 
+        // Diagnostic snapshot - readable in devtools to figure out
+        // why the user keeps landing on the OTP screen. Tells you in
+        // one line which precondition tripped.
+        console.info('[auth] cold-start:', {
+          hasJwt: !!meta.jwt,
+          jwtExp: exp ? new Date(exp).toISOString() : null,
+          jwtValidNow: hasValidJwt,
+          hasRefreshToken: !!meta.refresh_token,
+          hasWrap,
+          biometricEnabled: meta.biometric_enabled,
+          email: meta.email,
+        });
+
         // Access JWT is dead but a refresh token survives - try a
         // silent refresh against Supabase. If it succeeds we keep
         // biometric / wrap state; if it fails (refresh token revoked,
@@ -172,13 +185,16 @@ export default function App() {
               user_id: r.user_id,
             });
             hasValidJwt = true;
-          } catch {
+            console.info('[auth] silent refresh succeeded');
+          } catch (e) {
             // refresh token is dead - clear it so we don't keep retrying
+            console.warn('[auth] silent refresh failed:', e);
             await setMeta({ refresh_token: undefined });
           }
         }
 
         if (hasValidJwt && hasWrap && meta.biometric_enabled !== false) {
+          console.info('[auth] -> biometric mode');
           if (!cancelled) setAuthStart({ mode: 'biometric', email: meta.email });
           return;
         }
@@ -186,6 +202,7 @@ export default function App() {
         // left behind - clean up so the next biometric prompt isn't
         // a no-op against stale meta.
         if (!hasValidJwt && hasWrap) {
+          console.info('[auth] JWT dead + no refresh; clearing stale wrap blob');
           await setMeta({
             master_wrap_blob: undefined,
             master_wrap_nonce: undefined,
@@ -193,8 +210,10 @@ export default function App() {
           });
           await clearWrapKey();
         }
+        console.info('[auth] -> email mode (no resume path available)');
         if (!cancelled) setAuthStart({ mode: 'email' });
-      } catch {
+      } catch (e) {
+        console.warn('[auth] cold-start failed, falling back to email:', e);
         if (!cancelled) setAuthStart({ mode: 'email' });
       }
     })();

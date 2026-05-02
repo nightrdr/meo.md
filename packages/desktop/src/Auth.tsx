@@ -85,7 +85,13 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
   // Pre-flight: hide the biometric checkbox entirely on platforms that
   // don't have it (Linux desktop without libsecret-biometric, plain
   // browser tabs running `npm run dev`).
-  const [biometricShown, setBiometricShown] = useState(false);
+  //
+  // Optimistic default = true. The real check is async and a fast user
+  // can land on the unlock screen before it resolves; if we'd defaulted
+  // to false the checkbox would be hidden and the user would never see
+  // (or be able to enable) biometric. Worst case we briefly show the
+  // checkbox and then hide it once we learn the platform can't do it.
+  const [biometricShown, setBiometricShown] = useState(true);
   useEffect(() => {
     biometricAvailable().then(setBiometricShown).catch(() => setBiometricShown(false));
   }, []);
@@ -161,18 +167,41 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
    * (continuePastSecret) and returning-user (handleUnlock) paths so
    * biometric is enrolled identically in both. Failures are non-fatal
    * - the user has a valid session, biometric is just convenience.
+   *
+   * IMPORTANT: we re-check `biometricAvailable()` here at call time,
+   * not via the React `biometricShown` state. The state is hydrated
+   * by an async effect on mount, so a fast user can submit the form
+   * before it resolves - in which case `biometricShown` is still
+   * false, the closure captures it, and we'd silently skip enrollment
+   * AND wipe any prior wrap blob, locking the user into email-OTP on
+   * every restart. Asking the OS again is cheap and avoids the race.
    */
   async function maybeEnrollBiometric(masterRaw: Uint8Array): Promise<void> {
-    if (!(biometricOptIn && biometricShown)) {
-      // Explicit opt-out (or platform doesn't support it) - clear any
-      // stale blob from a previous device/session so cold-start
-      // routing doesn't get confused.
+    if (!biometricOptIn) {
+      // User explicitly unchecked the toggle. Clear any stale wrap
+      // state so cold-start routing doesn't think biometric is set up.
+      console.info('[auth] biometric: opted out, clearing wrap state');
       await setMeta({
         master_wrap_blob: undefined,
         master_wrap_nonce: undefined,
         biometric_enabled: false,
       });
       await clearWrapKey();
+      return;
+    }
+    // Re-probe the platform NOW, ignoring stale React state. On a
+    // platform that genuinely can't do biometric (Linux, plain
+    // browser tab) we DO NOT wipe an existing wrap blob - the user
+    // may have set it up on another device/run with biometric, and
+    // we don't want a one-off Vite dev session to nuke it.
+    let canBiometric = false;
+    try {
+      canBiometric = await biometricAvailable();
+    } catch {
+      canBiometric = false;
+    }
+    if (!canBiometric) {
+      console.info('[auth] biometric: platform unavailable, leaving wrap state untouched');
       return;
     }
     try {
@@ -187,9 +216,9 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
       // the user denied permission - flip the flag back off so the
       // next cold start doesn't show the biometric screen.
       await saveWrapKey(keyB64);
+      console.info('[auth] biometric: enrolled, wrap key saved to keychain');
     } catch (e) {
-      // eslint-disable-next-line no-console
-      console.warn('biometric setup failed (continuing without):', e);
+      console.warn('[auth] biometric setup failed (continuing without):', e);
       await setMeta({
         master_wrap_blob: undefined,
         master_wrap_nonce: undefined,
