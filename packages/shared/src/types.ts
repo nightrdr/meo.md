@@ -77,3 +77,23 @@ export interface AttachmentSummary {
 // Marker URL pattern that the editor inserts and the renderer recognizes.
 // Stored in markdown as `![alt](attachment:<uuid>)`.
 export const ATTACHMENT_URL_PREFIX = 'attachment:';
+
+// ----------------------------------------------------------------------------
+// Subscriptions (Agent 10).
+//
+// `Tier` is the canonical name of a billing tier. The full feature matrix
+// lives in `mvp-development.md`; the desktop app reads it via getCurrentTier()
+// (in session.ts) which queries the meo.subscriptions table.
+// ----------------------------------------------------------------------------
+export type Tier = 'free' | 'hobbyist' | 'business' | 'enterprise';
+export type BillingSource = 'paddle' | 'revenuecat' | 'manual';
+
+export interface SubscriptionRow {
+  user_id: string;
+  tier: Tier;
+  source: BillingSource | null;
+  external_id: string | null;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  updated_at: string;
+}

@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import type { Note } from '@meo/shared';
 import { AuthScreen } from './Auth';
+import { Onboarding } from './Onboarding';
 import { Editor } from './Editor';
 import {
   rehydrateNotes, pullSync, saveNote, deleteNote, newDraft, buildFolderTree,
   buildTagList, renameFolderEverywhere, moveNoteToFolder,
+  refreshSubscription, getCurrentTier,
   type Session,
 } from './session';
 import { clearAll, getMeta, setMeta } from './storage';
@@ -13,13 +15,19 @@ import { ContextMenu, type MenuEntry } from './ContextMenu';
 import { SearchOverlay } from './SearchOverlay';
 import { AIControls, MODELS } from './AIControls';
 import { AIPanel } from './AIPanel';
-import { Settings } from './Settings';
+import { Settings, type SettingsTab } from './Settings';
 import { peekAIRuntime } from './aiStore';
 import { Mod, shortcut } from './platform';
 import { setAttachmentsContext } from './AttachmentRenderer';
 import { supabaseUrl, supabaseAnonKey } from './session';
+import { useMenuEvents, type MenuHandlers } from './menus';
 
 type Status = 'idle' | 'syncing' | 'saving' | 'error';
+
+// Display-only version for the About modal. The native bundle
+// version comes from `tauri.conf.json`; this constant just gives
+// the modal something to show without an extra import.
+const APP_VERSION = '0.1.0';
 
 interface MenuState {
   x: number;
@@ -29,6 +37,10 @@ interface MenuState {
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
+  // First-run onboarding: shown to a brand-new user after Auth.tsx
+  // succeeds, before they see the editor. Persists `onboarding_done`
+  // so it never re-appears (Agent 7).
+  const [onboardingPending, setOnboardingPending] = useState(false);
   const [tick, setTick] = useState(0);
   const [selectedFolder, setSelectedFolder] = useState<string>('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
@@ -62,7 +74,26 @@ export default function App() {
   const [dynamicModels, setDynamicModels] = useState<typeof MODELS>([]);
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('ai');
+  // Renders the free-tier upgrade banner above Ask Meo. Updated lazily when
+  // refreshSubscription resolves (and the session reference identity stays
+  // stable, so we use a separate state for the rerender trigger).
+  const [tier, setTier] = useState<ReturnType<typeof getCurrentTier>>('free');
+  // Tiny About modal — opened from the App menu (Agent 5).
+  const [aboutOpen, setAboutOpen] = useState(false);
+  // Sidebar visibility — persisted via setMeta. Toggle through the
+  // list-pane header button, the ⇧⌘S shortcut, or `toggleSidebar()`
+  // (Agent 5's native View menu calls into this).
+  const [sidebarHidden, setSidebarHidden] = useState(false);
   const saveTimer = useRef<number | null>(null);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarHidden(v => {
+      const next = !v;
+      setMeta({ sidebar_hidden: next }).catch(() => {});
+      return next;
+    });
+  }, []);
 
   const refresh = useCallback(() => setTick(x => x + 1), []);
 
@@ -103,9 +134,16 @@ export default function App() {
         handleNew();
         return;
       }
+      // ⇧⌘S / Ctrl+Shift+S — toggle sidebar (matches macOS Notes' ^⌘S).
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 's' && session) {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
       if (e.key === 'Escape') {
         // Topmost overlay first — order matches z-index reading.
         if (menu) { setMenu(null); e.preventDefault(); return; }
+        if (aboutOpen) { setAboutOpen(false); e.preventDefault(); return; }
         if (searchOpen) { setSearchOpen(false); e.preventDefault(); return; }
         if (settingsOpen) { setSettingsOpen(false); e.preventDefault(); return; }
         if (tagAddOpen) { setTagAddOpen(false); setTagAddInput(''); e.preventDefault(); return; }
@@ -125,7 +163,12 @@ export default function App() {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, aiOn, menu, searchOpen, settingsOpen, tagAddOpen, creatingFolder, renamingFolder, aiPanelOpen]);
+  }, [session, aiOn, menu, searchOpen, settingsOpen, aboutOpen, tagAddOpen, creatingFolder, renamingFolder, aiPanelOpen, toggleSidebar]);
+
+  // Native menu wiring (Agent 5) — see the `useMenuEvents` block
+  // further down. The hook is called after handleNew /
+  // startCreateFolder are defined, since those are `const` and
+  // can't be referenced before their `useCallback` runs.
 
   // Embed-on-save lifecycle. Only re-indexes if the AI runtime is
   // already loaded (the AI panel has been opened this session).
@@ -165,6 +208,8 @@ export default function App() {
     setExpandedFolders(new Set(meta.expanded_folders ?? []));
     setAiOn(meta.ai_on ?? true);
     setModelId(meta.model_id ?? MODELS[0].id);
+    setSidebarHidden(meta.sidebar_hidden ?? false);
+    setOnboardingPending(meta.onboarding_done !== true);
     setSession(s);
     // Populate the attachments-renderer shim so Editor.tsx + AttachmentRenderer
     // can build an authed AttachmentsClient on demand without prop-drilling
@@ -187,6 +232,9 @@ export default function App() {
     } catch (e) {
       setStatus('error'); setStatusMsg(`Sync failed: ${(e as Error).message}`);
     }
+    // Load subscription tier in the background. Failure is non-fatal — the
+    // user just stays on the conservative 'free' default.
+    refreshSubscription(s).then(() => setTier(getCurrentTier(s))).catch(() => {});
   }, [refresh]);
 
   // Periodic poll
@@ -489,15 +537,57 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiOn]);
 
+  // ─── Native menu wiring (Agent 5) ───
+  // Bridge for the macOS menu bar. The Rust side emits "menu://<id>"
+  // events; this hook turns them into typed callbacks. Handlers for
+  // still-unimplemented features (export, print, import-markdown,
+  // insert-link, new-tag, new-device) are intentionally omitted so
+  // useMenuEvents falls back to a console.warn — that way the gap
+  // is visible in dev without the click silently doing nothing.
+  // ⌘F is re-routed via a synthetic keydown so Editor.tsx's existing
+  // find-bar listener handles it without a new prop.
+  const dispatchFind = useCallback(() => {
+    const ev = new KeyboardEvent('keydown', {
+      key: 'f', code: 'KeyF',
+      metaKey: true, ctrlKey: true,
+      bubbles: true, cancelable: true,
+    });
+    document.dispatchEvent(ev);
+  }, []);
+  const menuHandlers = useMemo<MenuHandlers>(() => ({
+    onAbout: () => setAboutOpen(true),
+    onSettings: () => setSettingsOpen(true),
+    onNewNote: () => { void handleNew(); },
+    onNewFolder: () => startCreateFolder(''),
+    onSearchNotes: () => setSearchOpen(true),
+    onAskMeo: () => { if (aiOn) setAiPanelOpen(o => !o); },
+    onFind: dispatchFind,
+    onModeChange: (_m) => {
+      // Editor mode toggling lands with Agent 2's parity track.
+      // eslint-disable-next-line no-console
+      console.warn('[meo] menu event not yet wired: mode change');
+    },
+    onToggleSidebar: toggleSidebar,
+    // export/import/print/insert-link/new-tag/new-device intentionally
+    // omitted — useMenuEvents will console.warn until those ship.
+  }), [
+    handleNew, startCreateFolder, aiOn, dispatchFind, toggleSidebar,
+  ]);
+  useMenuEvents(menuHandlers);
+
   if (!session) {
     return <AuthScreen onAuthenticated={onAuth} />;
+  }
+
+  if (onboardingPending) {
+    return <Onboarding onDone={() => setOnboardingPending(false)} />;
   }
 
   // Word count for status bar
   const wordCount = selected ? selected.body.split(/\s+/).filter(Boolean).length : 0;
 
   return (
-    <div className={`app ${aiPanelOpen ? 'ai-open' : ''}`}>
+    <div className={`app ${aiPanelOpen ? 'ai-open' : ''} ${sidebarHidden ? 'sidebar-hidden' : ''}`}>
       {/* ───────── Sidebar ───────── */}
       <aside className="sidebar">
         <div className="sidebar-brand">
@@ -619,6 +709,18 @@ export default function App() {
         </div>
 
         <div className="sidebar-footer">
+          {tier === 'free' && (
+            <button
+              type="button"
+              className="upgrade-banner"
+              onClick={() => { setSettingsTab('subscription'); setSettingsOpen(true); }}
+              title="Upgrade Meo"
+            >
+              <Icon.Sparkle size={12} />
+              <span>Upgrade Meo</span>
+              <span className="hint">More storage, AI tokens &amp; devices</span>
+            </button>
+          )}
           <button
             type="button"
             className="ai-open-btn"
@@ -643,6 +745,13 @@ export default function App() {
       {/* ───────── Notes list ───────── */}
       <section className="list-pane">
         <div className="list-header">
+          <button
+            className="btn icon-btn list-sidebar-toggle"
+            onClick={toggleSidebar}
+            title={`${sidebarHidden ? 'Show' : 'Hide'} sidebar (${shortcut('S', 'shift')})`}
+          >
+            <Icon.Sidebar size={14} />
+          </button>
           <h2>{selectedTag ? `#${selectedTag}` : (selectedFolder || 'All notes')}</h2>
           <span className="count">{visibleNotes.length} {visibleNotes.length === 1 ? 'note' : 'notes'}</span>
           <div style={{ flex: 1 }} />
@@ -654,33 +763,38 @@ export default function App() {
           {visibleNotes.length === 0 && (
             <div className="note-list-empty">No notes here yet.</div>
           )}
-          {visibleNotes.map((n) => (
-            <div
-              key={n.id}
-              className={`note-item ${n.id === selectedId ? 'active' : ''}`}
-              onClick={() => setSelectedId(n.id)}
-              onContextMenu={(e) => openMenu(e, noteMenuItems(n))}
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer.setData('application/x-meo-note-id', n.id);
-                e.dataTransfer.effectAllowed = 'move';
-              }}
-            >
-              <div className="title-row">
-                <span className="title">{n.title || 'Untitled'}</span>
-                <span className="updated">{formatTimeAgo(n.updated_at)}</span>
-              </div>
-              <div className="preview">
-                {(n.body.split('\n').find(l => l.trim() && !l.startsWith('#')) ?? '').slice(0, 200) || ' '}
-              </div>
-              {n.tags.length > 0 && (
-                <div className="note-item-tags">
-                  {n.tags.slice(0, 3).map(t => (
-                    <span key={t} className="note-item-tag">#{t}</span>
-                  ))}
+          {groupNotesByDate(visibleNotes).map(({ label, notes }) => (
+            <React.Fragment key={label}>
+              <div className="list-date-header">{label}</div>
+              {notes.map((n) => (
+                <div
+                  key={n.id}
+                  className={`note-item ${n.id === selectedId ? 'active' : ''}`}
+                  onClick={() => setSelectedId(n.id)}
+                  onContextMenu={(e) => openMenu(e, noteMenuItems(n))}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('application/x-meo-note-id', n.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                  }}
+                >
+                  <div className="title-row">
+                    <span className="title">{n.title || 'Untitled'}</span>
+                    <span className="updated">{formatTimeAgo(n.updated_at)}</span>
+                  </div>
+                  <div className="preview">
+                    {(n.body.split('\n').find(l => l.trim() && !l.startsWith('#')) ?? '').slice(0, 200) || ' '}
+                  </div>
+                  {n.tags.length > 0 && (
+                    <div className="note-item-tags">
+                      {n.tags.slice(0, 3).map(t => (
+                        <span key={t} className="note-item-tag">#{t}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              ))}
+            </React.Fragment>
           ))}
         </div>
       </section>
@@ -747,12 +861,51 @@ export default function App() {
       {/* Settings */}
       {settingsOpen && session && (
         <Settings
+          session={session}
           notes={session.notes}
           modelId={modelId}
+          initialTab={settingsTab}
           onSelectModel={setModelId}
           onClose={() => setSettingsOpen(false)}
         />
       )}
+
+      {/* About modal — opened from the macOS App menu (Agent 5). */}
+      {aboutOpen && (
+        <AboutModal onClose={() => setAboutOpen(false)} />
+      )}
+    </div>
+  );
+}
+
+// Minimal About sheet. We render the Meo wordmark + version + a
+// link to the project website. Click the backdrop or press Esc to
+// close (Esc is wired by the keydown handler at the top of App).
+function AboutModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      className="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="About Meo"
+      onClick={onClose}
+    >
+      <div
+        className="about-modal"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="about-mark"><MeoMark size={48} /></div>
+        <div className="about-name">Meo</div>
+        <div className="about-version">Version {APP_VERSION}</div>
+        <div className="about-tagline">End-to-end encrypted markdown notes.</div>
+        <a
+          className="about-link"
+          href="https://meo.md"
+          target="_blank"
+          rel="noreferrer noopener"
+        >meo.md</a>
+        <button type="button" className="btn" onClick={onClose}>Close</button>
+      </div>
     </div>
   );
 }
@@ -943,4 +1096,73 @@ function formatTimeAgo(iso: string): string {
   const d = Math.floor(h / 24);
   if (d < 7) return `${d}d`;
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// ─── Date-grouped notes list (mac Notes pattern) ─────────────────────
+//
+// Buckets, in order:
+//   Today / Yesterday / Previous 7 Days / Previous 30 Days
+//   then for each older calendar month within the current year:
+//     <Month name> (e.g. "March")
+//   then for each older year:
+//     <Year> (e.g. "2024")
+//
+// `notes` is assumed to be already sorted by `updated_at` descending —
+// we only iterate once and append to the matching bucket. All cutoffs
+// are computed against local-time midnight, so a note touched at
+// 12:01 AM "today" goes to **Today**, while 11:59 PM "yesterday" goes
+// to **Yesterday** (the cutoff is exclusive on the older side).
+//
+// Empty buckets are dropped.
+export function groupNotesByDate(notes: Note[]): Array<{ label: string; notes: Note[] }> {
+  if (notes.length === 0) return [];
+
+  const now = new Date();
+  // Local-time midnight today.
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const yesterdayStart = todayStart - 86_400_000;
+  const sevenDaysStart = todayStart - 7 * 86_400_000;
+  const thirtyDaysStart = todayStart - 30 * 86_400_000;
+  const currentYear = now.getFullYear();
+
+  const monthName = (m: number) =>
+    new Date(2000, m, 1).toLocaleDateString(undefined, { month: 'long' });
+
+  // Build ordered buckets via a Map (preserves insertion order). Notes
+  // arrive in descending updated_at order, so monthly/year buckets
+  // naturally appear in the right top-down order without re-sorting.
+  const buckets = new Map<string, { label: string; notes: Note[] }>();
+  const ensure = (key: string, label: string) => {
+    let b = buckets.get(key);
+    if (!b) { b = { label, notes: [] }; buckets.set(key, b); }
+    return b;
+  };
+
+  for (const n of notes) {
+    const t = new Date(n.updated_at).getTime();
+    if (Number.isNaN(t)) continue;
+    let key: string;
+    let label: string;
+    if (t >= todayStart) {
+      key = 'today'; label = 'Today';
+    } else if (t >= yesterdayStart) {
+      key = 'yesterday'; label = 'Yesterday';
+    } else if (t >= sevenDaysStart) {
+      key = '7d'; label = 'Previous 7 Days';
+    } else if (t >= thirtyDaysStart) {
+      key = '30d'; label = 'Previous 30 Days';
+    } else {
+      const d = new Date(t);
+      const y = d.getFullYear();
+      if (y === currentYear) {
+        const m = d.getMonth();
+        key = `m-${y}-${m}`; label = monthName(m);
+      } else {
+        key = `y-${y}`; label = String(y);
+      }
+    }
+    ensure(key, label).notes.push(n);
+  }
+
+  return Array.from(buckets.values());
 }

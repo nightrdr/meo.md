@@ -25,9 +25,12 @@ import (
 	"syscall"
 	"time"
 
+	"path/filepath"
+
 	"meo.md/backend/internal/api"
 	"meo.md/backend/internal/auth"
 	"meo.md/backend/internal/config"
+	"meo.md/backend/internal/models"
 	"meo.md/backend/internal/store"
 )
 
@@ -47,6 +50,31 @@ func main() {
 	signer := auth.NewJWTSigner(cfg.JWTSecret, 30*24*time.Hour)
 
 	srv := api.NewServer(st.Users, st.Accounts, st.Notes, st.SyncCursor, hasher, signer)
+
+	// ─── Model download subsystem ───────────────────────────────────
+	// Catalogue is embedded in the binary; ops can override the file
+	// via MEO_MODEL_MANIFEST. Files live in MEO_MODEL_DIR (default:
+	// <binary-dir>/../models/). Admin upload gated by MEO_ADMIN_TOKEN.
+	modelDir := os.Getenv("MEO_MODEL_DIR")
+	if modelDir == "" {
+		exe, err := os.Executable()
+		if err == nil {
+			modelDir = filepath.Join(filepath.Dir(exe), "..", "models")
+		} else {
+			modelDir = "models"
+		}
+	}
+	cat, err := models.LoadCatalogue(os.Getenv("MEO_MODEL_MANIFEST"))
+	if err != nil {
+		log.Printf("model catalogue: %v (model endpoints disabled)", err)
+	} else {
+		mstore, err := models.NewStore(modelDir)
+		if err != nil {
+			log.Printf("model store: %v (model endpoints will 503)", err)
+			mstore = nil
+		}
+		srv.WithModels(cat, mstore, os.Getenv("MEO_ADMIN_TOKEN"))
+	}
 
 	httpSrv := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.Port),

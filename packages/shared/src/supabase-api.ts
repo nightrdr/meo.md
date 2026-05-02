@@ -13,6 +13,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type {
   AccountWrapper, EncryptedNoteRow, AuthSignupResponse, AuthLoginResponse, SyncResponse,
+  SubscriptionRow, Tier,
 } from './types.js';
 import { ApiError } from './api.js';
 
@@ -229,6 +230,32 @@ export class SupabaseApiClient {
       updated_at: typeof r.updated_at === 'string' ? Date.parse(r.updated_at) : Number(r.updated_at),
       deleted_at: r.deleted_at == null ? null : (typeof r.deleted_at === 'string' ? Date.parse(r.deleted_at) : Number(r.deleted_at)),
       size_bytes: Number(r.size_bytes ?? 0),
+    };
+  }
+
+  // Read the caller's subscription row. Returns null if no row exists yet
+  // (treat as `tier: 'free'`). RLS guarantees we only ever see auth.uid()'s
+  // own row; a different user's row would simply not appear.
+  async getSubscription(): Promise<SubscriptionRow | null> {
+    const { data, error } = await this.sb
+      .from('subscriptions')
+      .select('user_id, tier, source, external_id, current_period_end, cancel_at_period_end, updated_at')
+      .maybeSingle();
+    if (error) {
+      // PostgREST returns code PGRST116 when 0 rows match maybeSingle; that's
+      // a not-found, not a fatal error.
+      if ((error as any).code === 'PGRST116') return null;
+      throw mapPgError(error as any);
+    }
+    if (!data) return null;
+    return {
+      user_id: data.user_id as string,
+      tier: data.tier as Tier,
+      source: (data.source ?? null) as SubscriptionRow['source'],
+      external_id: (data.external_id ?? null) as string | null,
+      current_period_end: (data.current_period_end ?? null) as string | null,
+      cancel_at_period_end: Boolean(data.cancel_at_period_end),
+      updated_at: data.updated_at as string,
     };
   }
 }

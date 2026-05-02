@@ -20,3 +20,4 @@ supabase/.temp/
 supabase/.env
 test-dist/
 export-test/
+.claude/

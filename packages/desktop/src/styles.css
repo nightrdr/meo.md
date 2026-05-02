@@ -247,6 +247,25 @@ button, input, textarea, select { font: inherit; color: inherit; }
   height: 100vh;
   background: var(--paper);
   color: var(--ink);
+  /* Smooth sidebar collapse: animate the column-track width so the
+     list-pane and editor reflow rather than snap. */
+  transition: grid-template-columns 0.18s ease;
+}
+
+/* Sidebar collapsed: zero out the leftmost grid column. The sidebar
+   itself is hidden via overflow:hidden on .app + .sidebar's own
+   overflow rules, so its content doesn't leak. */
+.app.sidebar-hidden {
+  grid-template-columns: 0 300px 1fr;
+}
+.app.sidebar-hidden.ai-open {
+  grid-template-columns: 0 300px 1fr 360px;
+}
+.app.sidebar-hidden > .sidebar {
+  /* Belt-and-braces: also visually hide so focus traversal skips it
+     and the column doesn't render a 0-width strip. */
+  visibility: hidden;
+  border-right: none;
 }
 
 /* Sidebar (left) */
@@ -395,6 +414,31 @@ button, input, textarea, select { font: inherit; color: inherit; }
   font-size: 11px; color: var(--ink3);
 }
 .note-list { flex: 1; overflow: auto; }
+
+/* Sticky date-group headers inside the scrolling note list. Rendered
+   between groups by App.tsx's `groupNotesByDate(...)`. The header
+   sticks at top:0 of its scroll-container parent (.note-list). */
+.list-date-header {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--paper);
+  padding: 10px 16px 6px;
+  font-family: var(--font-sans);
+  font-size: 12.5px; font-weight: 700;
+  letter-spacing: -0.1px;
+  color: var(--ink);
+  border-bottom: 1px solid var(--paper-edge);
+}
+.list-date-header + .note-item {
+  /* Avoid double border under the sticky header. */
+  border-top: none;
+}
+
+/* Sidebar-toggle button in the list-pane header (mac Notes layout
+   puts the show/hide-sidebar control here). Sits flush left so it
+   reads as a chrome control rather than a content action. */
+.list-sidebar-toggle {
+  margin-right: 4px;
+}
 .note-item {
   position: relative;
   padding: 13px 16px 14px;
@@ -1865,3 +1909,38 @@ button, input, textarea, select { font: inherit; color: inherit; }
   margin: 0;
   cursor: pointer;
 }
+
+/* ─── About modal (Agent 5 — opened from the App menu) ─── */
+
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(31,28,23,0.22);
+  backdrop-filter: blur(2px);
+  display: flex; justify-content: center; align-items: center;
+  z-index: 200;
+}
+@media (prefers-color-scheme: dark) {
+  .modal-backdrop { background: rgba(0,0,0,0.5); }
+}
+.about-modal {
+  width: 320px;
+  background: var(--overlay);
+  border: 1px solid var(--paper-edge);
+  border-radius: 14px;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.3);
+  padding: 28px 24px 22px;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+}
+.about-mark { margin-bottom: 6px; }
+.about-name { font-size: 18px; font-weight: 600; }
+.about-version { font-size: 12px; color: var(--ink3); }
+.about-tagline { font-size: 13px; color: var(--ink2); margin-top: 4px; text-align: center; }
+.about-link {
+  font-size: 13px; color: var(--accent);
+  margin-top: 6px;
+  text-decoration: none;
+}
+.about-link:hover { text-decoration: underline; }
+.about-modal .btn { margin-top: 14px; min-width: 88px; }

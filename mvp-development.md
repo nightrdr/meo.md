@@ -30,7 +30,7 @@ Token overage on Business: $5 / 100k tokens (Agent 7).
 | 8 | Vault feature (always-locked notes) + 2FA (Business+) | 2 | pending | new `Vault*.tsx`, `Auth.tsx`, RPCs, context menu | TOTP via standard authenticator protocol. Vault re-prompts biometric/passphrase on access. |
 | 9 | QR pairing for new device + device list / remove | 2 | pending | `Auth.tsx`, File menu (Agent 5), Settings | Device row tracks type/make/IP. Free tier = 1 device hard cap. |
 | 10 | Paddle (web) + RevenueCat (mobile) + subscription mgmt + cross-store conflict UX | 1 | pending | new Edge Fns, `meo.subscriptions` schema, `Settings/Subscription.tsx`, App.tsx upgrade button | Refuse purchase on the wrong store, show "manage on \<other store\>". |
-| 11 | Date-grouped notes list + sidebar toggle | 1 | pending | `App.tsx`, `styles.css` | Today / Previous 30 Days / month / year groups. Hide-sidebar button. |
+| 11 | Date-grouped notes list + sidebar toggle | 1 | shipped | `App.tsx`, `styles.css`, `Icon.tsx`, `storage.ts` | Today / Yesterday / Previous 7 / 30 Days / month / year groups via `groupNotesByDate`. Sidebar toggle button + ⇧⌘S, persisted via `setMeta({sidebar_hidden})`, wired to Agent 5's `onToggleSidebar`. |
 | 12 | React Native apps (iOS / Android / desktop via macOS app store) | 4 | pending | new `packages/mobile-rn/` | RN-Tauri parity. Mobile uses ONLY models curated for mobile (Agent 7 hands the list); show alert on others. |
 
 ---

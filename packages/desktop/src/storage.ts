@@ -12,10 +12,17 @@ interface Meta {
   ai_on?: boolean;
   model_id?: string;
   expanded_folders?: string[];
+  sidebar_hidden?: boolean;      // collapse the leftmost sidebar column
+  // first-run setup (Agent 7)
+  onboarding_done?: boolean;
+  installed_models?: string[];   // ids of model files cached in this device
+  // BYO cloud LLM keys — local only, never sent to our server.
+  // null/empty for tiers that haven't earned the privilege.
+  cloud_keys?: { openai?: string; anthropic?: string; google?: string };
 }
 
 const DB_NAME = 'meo-md';
-const VERSION = 2;   // bumped: added 'vectors' object store
+const VERSION = 3;   // v3: added 'model_files' object store (Agent 7)
 
 async function getDb(): Promise<IDBPDatabase> {
   return openDB(DB_NAME, VERSION, {
@@ -24,6 +31,12 @@ async function getDb(): Promise<IDBPDatabase> {
       if (!db.objectStoreNames.contains('notes')) db.createObjectStore('notes', { keyPath: 'id' });
       if (oldVersion < 2 && !db.objectStoreNames.contains('vectors')) {
         db.createObjectStore('vectors', { keyPath: 'noteId' });
+      }
+      if (oldVersion < 3 && !db.objectStoreNames.contains('model_files')) {
+        // Stores downloaded model binaries keyed by manifest id.
+        // We use a separate store so cache eviction can wipe vectors
+        // without nuking multi-GB model downloads.
+        db.createObjectStore('model_files', { keyPath: 'id' });
       }
     },
   });
@@ -87,4 +100,38 @@ export async function listCachedNotes(): Promise<EncryptedNoteRow[]> {
 export async function putCachedNote(row: EncryptedNoteRow) {
   const db = await getDb();
   await db.put('notes', row);
+}
+
+// ─── Downloaded model files ───────────────────────────────────────
+//
+// Files are written as a single Blob keyed by the manifest id. We keep
+// the byte length and sha256 alongside so a future verification pass
+// can detect corruption without re-reading the whole blob.
+
+export interface CachedModelFile {
+  id: string;
+  blob: Blob;
+  size_bytes: number;
+  sha256?: string;
+  cached_at: string;
+}
+
+export async function getModelFile(id: string): Promise<CachedModelFile | undefined> {
+  const db = await getDb();
+  return (await db.get('model_files', id)) as CachedModelFile | undefined;
+}
+
+export async function putModelFile(row: CachedModelFile): Promise<void> {
+  const db = await getDb();
+  await db.put('model_files', row);
+}
+
+export async function deleteModelFile(id: string): Promise<void> {
+  const db = await getDb();
+  await db.delete('model_files', id);
+}
+
+export async function listModelFileIds(): Promise<string[]> {
+  const db = await getDb();
+  return (await db.getAllKeys('model_files')) as string[];
 }

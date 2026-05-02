@@ -3,7 +3,7 @@
 import {
   ApiClient, SupabaseApiClient, encryptNote, decryptNote, base64ToBytes, bytesToBase64,
   hlcZero, hlcTick, hlcEncode, hlcCompare, uuidv4,
-  type Note, type EncryptedNoteRow,
+  type Note, type EncryptedNoteRow, type SubscriptionRow, type Tier,
 } from '@meo/shared';
 import { getMeta, setMeta, listCachedNotes, putCachedNote } from './storage';
 
@@ -23,6 +23,40 @@ export interface Session {
   notes: Map<string, Note>;
   syncCursor: number;
   hlc: ReturnType<typeof hlcZero>;
+  // Cached subscription row, lazily loaded after auth (refreshSubscription).
+  // `null` means "not loaded yet"; a missing row → tier 'free'.
+  subscription?: SubscriptionRow | null;
+}
+
+/**
+ * Read the current tier from the cached subscription row. The cache is
+ * populated by refreshSubscription() right after sign-in. Free is the safe
+ * default when the row hasn't loaded yet (e.g. fresh signup, network blip).
+ */
+export function getCurrentTier(session: Session | null | undefined): Tier {
+  return session?.subscription?.tier ?? 'free';
+}
+
+/**
+ * Fetch meo.subscriptions for this user and cache it on the Session.
+ * Idempotent — calling repeatedly just refreshes the cache.
+ */
+export async function refreshSubscription(session: Session): Promise<SubscriptionRow | null> {
+  if (!(session.api instanceof SupabaseApiClient)) {
+    // Hono backend doesn't carry billing data yet; pretend free tier.
+    session.subscription = null;
+    return null;
+  }
+  try {
+    const row = await session.api.getSubscription();
+    session.subscription = row;
+    return row;
+  } catch (e) {
+    console.warn('failed to refresh subscription', e);
+    // Don't trash an existing cached value on a transient error.
+    if (session.subscription === undefined) session.subscription = null;
+    return session.subscription ?? null;
+  }
 }
 
 export const dataBackend = (typeof __DATA_BACKEND__ !== 'undefined' ? __DATA_BACKEND__ : 'supabase') as 'supabase' | 'hono';
@@ -193,3 +227,24 @@ export async function moveNoteToFolder(
 }
 
 export { hlcCompare };
+
+// ─── Tier gating constants (Agent 7) ───────────────────────────────
+//
+// Gating policy (canonical — see mvp-development.md "Pricing tiers"):
+//   - free:       no cloud LLMs, no BYO API keys; upgrade nag in UI.
+//   - hobbyist:   BYO API keys (OpenAI / Anthropic / Google) only,
+//                 stored locally, never proxied through our server.
+//   - business:   BYO + 200k frontier tokens/month included via the
+//                 server-side AI proxy (Agent 10 owns usage tracking).
+//   - enterprise: custom; same surface as business for v1.0.
+//
+// `getCurrentTier(session)` lives at the top of this file (Agent 10).
+// Re-exported here as a stable name other modules can import.
+
+/**
+ * Token-overage pricing on the Business tier. Surfaced as a constant
+ * so the upcoming usage UI (Agent 10) can derive "$X for next 100k"
+ * without hard-coding numbers in two places.
+ */
+export const BUSINESS_OVERAGE_RATE = { tokens: 100_000, usd_cents: 500 };
+

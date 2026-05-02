@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"meo.md/backend/internal/auth"
+	"meo.md/backend/internal/models"
 	"meo.md/backend/internal/store"
 )
 
@@ -17,12 +18,15 @@ import (
 // its work, so a test can construct a Server with fake stores +
 // fake hasher + fake signer and exercise the handlers in isolation.
 type Server struct {
-	users    *store.UserStore
-	accounts *store.AccountStore
-	notes    *store.NoteStore
-	sync     *store.SyncCursorStore
-	hasher   *auth.Hasher
-	signer   *auth.JWTSigner
+	users      *store.UserStore
+	accounts   *store.AccountStore
+	notes      *store.NoteStore
+	sync       *store.SyncCursorStore
+	hasher     *auth.Hasher
+	signer     *auth.JWTSigner
+	models     *models.Catalogue // nil if model service is disabled
+	modelStore *models.Store     // nil if model service is disabled
+	adminToken string            // empty disables admin endpoints
 }
 
 // NewServer wires the dependencies. Caller (cmd/server/main.go) is
@@ -41,6 +45,16 @@ func NewServer(
 	}
 }
 
+// WithModels attaches the model-download subsystem. Pass nil for the
+// store if the directory couldn't be created — the routes will return
+// 503 instead of 500.
+func (s *Server) WithModels(catalogue *models.Catalogue, store *models.Store, adminToken string) *Server {
+	s.models = catalogue
+	s.modelStore = store
+	s.adminToken = adminToken
+	return s
+}
+
 // Routes returns a *gin.Engine with every route registered. Kept as
 // a method so callers can wrap the engine (e.g. add metrics
 // middleware) without forking this package.
@@ -54,6 +68,13 @@ func (s *Server) Routes() *gin.Engine {
 
 	r.POST("/auth/signup", s.signup)
 	r.POST("/auth/login", s.login)
+
+	// Model download service. Public reads, admin-token-gated upload.
+	// Returns 503 if the model subsystem wasn't wired (e.g. dir
+	// inaccessible) so clients get a clear signal.
+	r.GET("/models/manifest", s.listModelManifest)
+	r.GET("/models/:id/file", s.streamModelFile)
+	r.POST("/models/:id/upload", s.uploadModelFile)
 
 	auth := r.Group("")
 	auth.Use(s.requireAuth)

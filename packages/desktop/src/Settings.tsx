@@ -1,17 +1,29 @@
-// Settings → AI screen. Two sections in v1.0:
+// Settings → AI screen. Sections in v1.0:
 //   - Local models: list dynamically discovered Ollama models +
 //     statically known ones with [install] buttons that call
 //     OllamaBackend.pull and surface progress.
 //   - Embeddings: show the current embedder + indexed-notes progress,
 //     [Force re-index] button.
+//   - Cloud models: tier-gated per the canonical pricing table.
 //
-// The "Cloud models" section from the spec §11 is hidden in v1.0 — it
-// gates on a paid tier that doesn't exist yet.
+// ─── Tier gating policy (Agent 7) ──────────────────────────────────
+// Free      → cloud LLM section disabled, "Upgrade to enable" pitch.
+// Hobbyist+ → BYO API key inputs (OpenAI / Anthropic / Google).
+// Business+ → BYO + 200k tokens/month included usage bar (placeholder
+//             until Agent 10's billing wiring lands).
+// Keys are stored locally only (meta.cloud_keys), never proxied.
+// ───────────────────────────────────────────────────────────────────
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { ai as A, type Note } from '@meo/shared';
+import { ai as A, type Note, type Tier } from '@meo/shared';
 import { Icon } from './Icon';
 import { peekAIRuntime, getAIRuntime } from './aiStore';
+import { Subscription } from './Settings/Subscription';
+import type { Session } from './session';
+import { getCurrentTier } from './session';
+import { getMeta, setMeta } from './storage';
+
+export type SettingsTab = 'ai' | 'subscription';
 
 interface PullState {
   modelId: string;
@@ -22,8 +34,10 @@ interface PullState {
 }
 
 interface Props {
+  session: Session;
   notes: Map<string, Note>;
   modelId: string;
+  initialTab?: SettingsTab;
   onSelectModel: (id: string) => void;
   onClose: () => void;
 }
@@ -35,7 +49,8 @@ interface DiscoveredModel {
   tag: string;
 }
 
-export function Settings({ notes, modelId, onSelectModel, onClose }: Props) {
+export function Settings({ session, notes, modelId, initialTab = 'ai', onSelectModel, onClose }: Props) {
+  const [tab, setTab] = useState<SettingsTab>(initialTab);
   const [discovered, setDiscovered] = useState<DiscoveredModel[]>([]);
   const [ollamaUp, setOllamaUp] = useState<boolean | null>(null);
   const [pulls, setPulls] = useState<Record<string, PullState>>({});
@@ -124,19 +139,45 @@ export function Settings({ notes, modelId, onSelectModel, onClose }: Props) {
     s => !discoveredIds.has(normalize(s.id)),
   );
 
+  const tabLabel = tab === 'subscription' ? 'Subscription' : 'AI';
+
   return (
     <div className="settings-overlay" onMouseDown={onClose}>
       <div className="settings-card" onMouseDown={(e) => e.stopPropagation()}>
         <header className="settings-header">
           <div className="settings-title-row">
             <Icon.Settings size={16} />
-            <h1>Settings &nbsp;<span className="muted">/</span>&nbsp; AI</h1>
+            <h1>Settings &nbsp;<span className="muted">/</span>&nbsp; {tabLabel}</h1>
           </div>
           <button className="btn icon-btn" onClick={onClose} title="Close">
             <Icon.X size={14} />
           </button>
         </header>
 
+        <nav className="settings-tabs">
+          <button
+            className={`settings-tab ${tab === 'ai' ? 'active' : ''}`}
+            onClick={() => setTab('ai')}
+            type="button"
+          >
+            AI
+          </button>
+          <button
+            className={`settings-tab ${tab === 'subscription' ? 'active' : ''}`}
+            onClick={() => setTab('subscription')}
+            type="button"
+          >
+            Subscription
+          </button>
+        </nav>
+
+        {tab === 'subscription' && (
+          <div className="settings-body">
+            <Subscription session={session} />
+          </div>
+        )}
+
+        {tab === 'ai' && (
         <div className="settings-body">
           {/* ─── Local models ─── */}
           <section className="settings-section">
@@ -238,14 +279,10 @@ export function Settings({ notes, modelId, onSelectModel, onClose }: Props) {
             </div>
           </section>
 
-          {/* ─── Cloud models (locked, v1.1) ─── */}
-          <section className="settings-section locked">
-            <h2>Cloud models <span className="badge-v1-1">v1.1</span></h2>
-            <p className="muted">
-              Bring-your-own-key for OpenAI / Anthropic / Google. Sends note contents to the provider when used. Available on the paid tier.
-            </p>
-          </section>
+          {/* ─── Cloud models (tier-gated) ─── */}
+          <CloudModelsSection tier={getCurrentTier(session)} />
         </div>
+        )}
       </div>
     </div>
   );
@@ -332,4 +369,127 @@ function ollamaIdFor(catalogueId: string): string {
 /** Normalize id for matching across our catalogue and Ollama's tags. */
 function normalize(id: string): string {
   return id.replace(/[^a-z0-9.]/gi, '').toLowerCase();
+}
+
+// ─── Cloud models section (tier-gated) ─────────────────────────────
+
+interface CloudKeys {
+  openai?: string;
+  anthropic?: string;
+  google?: string;
+}
+
+function CloudModelsSection({ tier }: { tier: Tier }) {
+  const [keys, setKeys] = useState<CloudKeys>({});
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    getMeta().then(m => { if (alive) { setKeys(m.cloud_keys ?? {}); setLoaded(true); } });
+    return () => { alive = false; };
+  }, []);
+
+  const update = useCallback(async (patch: Partial<CloudKeys>) => {
+    const next = { ...keys, ...patch };
+    setKeys(next);
+    await setMeta({ cloud_keys: next });
+  }, [keys]);
+
+  // Free → upgrade pitch only.
+  if (tier === 'free') {
+    return (
+      <section className="settings-section">
+        <h2>Cloud models</h2>
+        <p className="muted">
+          Frontier LLMs (GPT-4o, Claude, Gemini) via your own API keys.
+        </p>
+        <div className="settings-callout">
+          <Icon.Sparkle size={13} stroke="var(--ai)" />
+          <div>
+            <b>Upgrade to enable frontier LLMs via your own API keys.</b><br />
+            <span className="muted small">Available on Hobbyist and above.&nbsp;</span>
+            <a href="#plans" onClick={(e) => { e.preventDefault(); /* Agent 10's plans page */ }}>See plans</a>
+          </div>
+        </div>
+        <CloudProviderRow label="OpenAI" disabled />
+        <CloudProviderRow label="Anthropic" disabled />
+        <CloudProviderRow label="Google" disabled />
+      </section>
+    );
+  }
+
+  // Hobbyist+ → BYOK fields. Business+ also gets the included-tokens bar.
+  return (
+    <section className="settings-section">
+      <h2>Cloud models</h2>
+      <p className="muted">
+        Bring your own API key. Keys are stored on this device only — never sent to meo.md servers.
+      </p>
+
+      {(tier === 'business' || tier === 'enterprise') && (
+        <div className="settings-row">
+          <div style={{ flex: 1 }}>
+            <div className="settings-row-label">Included this month</div>
+            <div className="settings-row-value">
+              0 / 200,000 tokens
+              <span className="muted small">&nbsp;· resets on subscription anniversary</span>
+            </div>
+            {/* Placeholder until Agent 10's usage wiring lands. */}
+            <div className="progress-bar"><div className="progress-fill" style={{ width: '0%' }} /></div>
+          </div>
+        </div>
+      )}
+
+      {loaded && (
+        <>
+          <CloudProviderRow
+            label="OpenAI"
+            placeholder="sk-…"
+            value={keys.openai ?? ''}
+            onChange={(v) => update({ openai: v })}
+          />
+          <CloudProviderRow
+            label="Anthropic"
+            placeholder="sk-ant-…"
+            value={keys.anthropic ?? ''}
+            onChange={(v) => update({ anthropic: v })}
+          />
+          <CloudProviderRow
+            label="Google"
+            placeholder="AI…"
+            value={keys.google ?? ''}
+            onChange={(v) => update({ google: v })}
+          />
+        </>
+      )}
+    </section>
+  );
+}
+
+interface CloudProviderRowProps {
+  label: string;
+  placeholder?: string;
+  value?: string;
+  onChange?: (v: string) => void;
+  disabled?: boolean;
+}
+
+function CloudProviderRow({ label, placeholder, value, onChange, disabled }: CloudProviderRowProps) {
+  return (
+    <div className="settings-row">
+      <div style={{ flex: 1 }}>
+        <div className="settings-row-label">{label} API key</div>
+        <input
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={disabled ? 'Upgrade to enter a key' : (placeholder ?? '')}
+          value={value ?? ''}
+          disabled={disabled}
+          onChange={(e) => onChange?.(e.target.value)}
+          style={{ width: '100%' }}
+        />
+      </div>
+    </div>
+  );
 }
