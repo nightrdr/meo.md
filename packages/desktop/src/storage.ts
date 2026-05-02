@@ -19,6 +19,11 @@ interface Meta {
   // BYO cloud LLM keys — local only, never sent to our server.
   // null/empty for tiers that haven't earned the privilege.
   cloud_keys?: { openai?: string; anthropic?: string; google?: string };
+  // Stable per-installation device id for the device cap + Devices pane
+  // (Agent 9). Generated lazily on first cold start; never sent in the
+  // QR pairing payload (B picks its own).
+  device_id?: string;
+  device_name?: string;
 }
 
 const DB_NAME = 'meo-md';

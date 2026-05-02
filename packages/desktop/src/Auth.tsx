@@ -20,12 +20,14 @@ import React, { useState, useRef } from 'react';
 import {
   setupNewAccount, unlockAccount, formatSecretKey, parseSecretKey,
   humanizeAuthError,
+  decodeQr, makeBKeypair, derivePairKey, openBundle,
+  SupabaseApiClient, b64ToBytes,
 } from '@meo/shared';
 import { setMeta } from './storage';
 import { makeApiClient, supabaseUrl, type Session } from './session';
 import { MeoMark, Icon } from './Icon';
 
-type Mode = 'email' | 'otp' | 'setup' | 'showSecret' | 'unlock';
+type Mode = 'email' | 'otp' | 'setup' | 'showSecret' | 'unlock' | 'pair';
 
 interface Props {
   onAuthenticated: (s: Session) => void;
@@ -149,6 +151,73 @@ export function AuthScreen({ onAuthenticated }: Props) {
     setBusy(false);
   }
 
+  // ── QR pairing (Device B side, Agent 9) ───────────────────────────
+  // Camera support is punted for v1 — we accept a paste of the QR
+  // payload (the modal on Device A shows a copyable text fallback).
+  // Once on Device B the flow is:
+  //   1. parse the QR text → ek_a_pub + handover_id
+  //   2. generate ek_b_pub locally, deposit it on the handovers row
+  //   3. poll the row for payload_for_b (encrypted bundle from A)
+  //   4. derive pair_key, decrypt bundle, hand off via onAuthenticated
+  // Failure modes: any error short-circuits to "use passphrase instead"
+  // so we never silently fall back to a less-secure flow.
+  const [pairText, setPairText] = useState('');
+  const [pairBusy, setPairBusy] = useState(false);
+
+  async function handlePair(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null); setInfo(null); setPairBusy(true);
+    try {
+      const payload = decodeQr(pairText);
+      if (!(api instanceof SupabaseApiClient)) {
+        throw new Error('QR pairing requires the Supabase backend.');
+      }
+      const ekA = b64ToBytes(payload.ek_a_pub);
+      const { ek_pub: ekBPub, ek_priv: ekBPriv } = await makeBKeypair();
+
+      // Deposit B's pubkey
+      await api.handoverPutB(payload.handover_id, ekBPub);
+
+      // Poll for payload (max ~50s before expires_at hits)
+      const started = Date.now();
+      let row: Awaited<ReturnType<SupabaseApiClient['handoverGet']>> | null = null;
+      while (Date.now() - started < 55_000) {
+        row = await api.handoverGet(payload.handover_id);
+        if (row?.payload_for_b && row.payload_nonce) break;
+        if (!row) break;          // expired or cleared
+        await sleep(1000);
+      }
+      if (!row || !row.payload_for_b || !row.payload_nonce) {
+        throw new Error('Pairing timed out. Try again from your existing device.');
+      }
+
+      // Derive pair_key + decrypt
+      const pairKey = await derivePairKey(ekBPriv, ekA, payload.handover_id);
+      const bundle = await openBundle(row.payload_for_b, row.payload_nonce, pairKey);
+
+      // Best-effort cleanup; keep going even if this fails.
+      try { await api.handoverClear(payload.handover_id); } catch { /* noop */ }
+
+      // Persist + hand off as a Session.
+      api.setJwt(bundle.jwt);
+      const masterRaw = b64ToBytes(bundle.master_key_raw);
+      await setMeta({ jwt: bundle.jwt, user_id: bundle.user_id, email: bundle.email });
+      const session: Session = {
+        api,
+        masterRaw,
+        user_id: bundle.user_id,
+        email: bundle.email,
+        notes: new Map(),
+        syncCursor: 0,
+        hlc: { ms: Date.now(), counter: 0 },
+      };
+      onAuthenticated(session);
+    } catch (e) {
+      setError(humanizePairingError(e));
+    }
+    setPairBusy(false);
+  }
+
   function continuePastSecret() {
     const session = (window as any).__pendingSession as Session | undefined;
     if (!session) return;
@@ -198,6 +267,63 @@ export function AuthScreen({ onAuthenticated }: Props) {
             <div className="switch" style={{ color: 'var(--ink3)', fontSize: 12 }}>
               First time? The same flow signs you up.
             </div>
+            <div className="switch" style={{ marginTop: 12 }}>
+              <a
+                onClick={() => { setMode('pair'); setError(null); setInfo(null); }}
+                style={{ cursor: 'pointer' }}
+              >
+                Already have Meo on another device? Scan QR from existing device →
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === 'pair') {
+    return (
+      <div className="auth-wrap">
+        <div>
+          <Brand />
+          <div className="auth-card">
+            <h1>Pair from existing device</h1>
+            <p className="sub">
+              On your other device, open <b>File ▸ New Device…</b>. It'll show a QR code
+              and a copyable text fallback. Paste that text below and we'll do the rest —
+              no passphrase needed.
+            </p>
+            <form onSubmit={handlePair}>
+              <label>Pairing code</label>
+              <textarea
+                rows={5}
+                required
+                value={pairText}
+                onChange={(e) => setPairText(e.target.value)}
+                placeholder="Paste the pairing text from your existing device…"
+                style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: 12 }}
+                autoFocus
+              />
+              <Notices />
+              <div className="actions">
+                <button
+                  className="btn primary"
+                  type="submit"
+                  disabled={pairBusy || pairText.trim().length < 20}
+                  style={{ flex: 1 }}
+                >
+                  {pairBusy ? 'Pairing…' : 'Pair this device'}
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={pairBusy}
+                  onClick={() => { setMode('email'); setError(null); setInfo(null); }}
+                >
+                  Use email instead
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       </div>
@@ -349,4 +475,20 @@ export function AuthScreen({ onAuthenticated }: Props) {
   }
 
   return null;
+}
+
+// ── Pairing helpers (Agent 9) ──
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+function humanizePairingError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (/expired/i.test(msg)) return 'That pairing code expired — generate a new one on your other device.';
+  if (/timed out/i.test(msg)) return 'Pairing timed out. Try again.';
+  if (/Invalid QR/i.test(msg) || /Unexpected token/i.test(msg) || /JSON/i.test(msg))
+    return 'That pairing code didn\'t parse. Make sure you copied the entire string.';
+  if (/Supabase backend/i.test(msg)) return msg;
+  return 'Pairing failed. Sign in with email instead.';
 }
