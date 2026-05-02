@@ -19,6 +19,17 @@ interface Meta {
   // BYO cloud LLM keys — local only, never sent to our server.
   // null/empty for tiers that haven't earned the privilege.
   cloud_keys?: { openai?: string; anthropic?: string; google?: string };
+  // ─── Biometric quick-unlock (Agent 1) ───
+  // master_wrap_blob is the AES-256-GCM ciphertext of the in-memory
+  // masterRaw, encrypted with a per-device wrap_key. The wrap_key is
+  // NOT stored here — it lives in the OS keychain behind the
+  // userPresence ACL (Touch ID / Watch / Windows Hello). On cold
+  // start with a still-valid JWT we route to the biometric unlock
+  // screen which pulls the wrap_key, decrypts this blob, and rebuilds
+  // the session without re-prompting for passphrase + Secret Key.
+  master_wrap_blob?: string;     // base64 ciphertext (32 bytes + 16-byte tag)
+  master_wrap_nonce?: string;    // base64 12-byte AES-GCM nonce
+  biometric_enabled?: boolean;   // user opt-in flag (defaults to true on first setup)
 }
 
 const DB_NAME = 'meo-md';

@@ -16,6 +16,30 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# Biometric / OS-keychain wrap-key plugin (Agent 1).
+#
+# macOS: security-framework gives us SecAccessControl + SecItem* with
+# kSecAttrAccessControl=.userPresence, which is the only ACL flag that
+# forces a Touch ID / Watch / login-password prompt on read. The
+# `OSX_10_15` feature unlocks the modern data-protection keychain
+# constants we use in biometric.rs.
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = { version = "3", features = ["OSX_10_15"] }
+security-framework-sys = { version = "2.14", features = ["OSX_10_15"] }
+core-foundation = "0.10"
+core-foundation-sys = "0.8"
+
+# Windows: PasswordVault (Credential Locker) + UserConsentVerifier
+# (Windows Hello). We need the Security_Credentials and
+# Security_Credentials_UI namespaces from the metadata-generated
+# bindings.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = [
+    "Security_Credentials",
+    "Security_Credentials_UI",
+    "Foundation",
+] }
+
 [profile.release]
 opt-level = "s"
 lto = true

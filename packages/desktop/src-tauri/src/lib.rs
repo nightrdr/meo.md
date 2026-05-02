@@ -24,6 +24,8 @@
 
 use tauri::Emitter;
 
+mod biometric;
+
 pub fn run() {
     let builder = tauri::Builder::default()
         .setup(|app| {
@@ -36,6 +38,12 @@ pub fn run() {
             let _ = app;
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![
+            biometric::biometric_save,
+            biometric::biometric_load,
+            biometric::biometric_clear,
+            biometric::biometric_available,
+        ])
         .on_menu_event(|app, event| {
             // Forward every custom-menu id to JS as `menu://<id>`.
             // Predefined items (undo/cut/quit/...) never reach this
