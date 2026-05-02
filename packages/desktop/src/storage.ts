@@ -126,6 +126,14 @@ export async function listCachedNotes(): Promise<EncryptedNoteRow[]> {
 }
 
 export async function putCachedNote(row: EncryptedNoteRow) {
+  // The 'notes' object store has keyPath 'id' - if `row.id` is
+  // missing or empty IDB raises "Evaluating the object store's key
+  // path yielded a value that is not a valid key" which is opaque.
+  // Surface a real reason here so failures upstream (e.g. an RPC
+  // that returned no row) are diagnosable.
+  if (!row || typeof row.id !== 'string' || row.id.length === 0) {
+    throw new Error(`putCachedNote: missing or invalid id (got: ${JSON.stringify(row?.id)})`);
+  }
   const db = await getDb();
   await db.put('notes', row);
 }

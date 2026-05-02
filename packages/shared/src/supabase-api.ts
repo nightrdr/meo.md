@@ -237,18 +237,7 @@ export class SupabaseApiClient {
     if (error) {
       throw mapPgError(error);
     }
-    const r = data as any;
-    return {
-      id: r.id,
-      encrypted_content: hexToBase64(r.encrypted_content),
-      nonce: hexToBase64(r.nonce),
-      version: Number(r.version),
-      hlc_timestamp: r.hlc_timestamp,
-      updated_at: typeof r.updated_at === 'string' ? Date.parse(r.updated_at) : Number(r.updated_at),
-      deleted_at: r.deleted_at == null ? null : (typeof r.deleted_at === 'string' ? Date.parse(r.deleted_at) : Number(r.deleted_at)),
-      size_bytes: Number(r.size_bytes ?? 0),
-      is_vault: Boolean(r.is_vault ?? false),
-    };
+    return parseNoteRow(data, row.id);
   }
 
   async deleteNote(id: string): Promise<EncryptedNoteRow> {
@@ -256,18 +245,7 @@ export class SupabaseApiClient {
     if (error) {
       throw mapPgError(error);
     }
-    const r = data as any;
-    return {
-      id: r.id,
-      encrypted_content: hexToBase64(r.encrypted_content),
-      nonce: hexToBase64(r.nonce),
-      version: Number(r.version),
-      hlc_timestamp: r.hlc_timestamp,
-      updated_at: typeof r.updated_at === 'string' ? Date.parse(r.updated_at) : Number(r.updated_at),
-      deleted_at: r.deleted_at == null ? null : (typeof r.deleted_at === 'string' ? Date.parse(r.deleted_at) : Number(r.deleted_at)),
-      size_bytes: Number(r.size_bytes ?? 0),
-      is_vault: Boolean(r.is_vault ?? false),
-    };
+    return parseNoteRow(data, id);
   }
 
   // ── Devices (Agent 9) ──
@@ -461,6 +439,41 @@ function mapPgError(error: { code?: string; message?: string }): ApiError {
   if (code === 'P0002' || msg.includes('not found')) return new ApiError(404, { error: msg });
   if (code === '23505') return new ApiError(409, { error: msg });
   return new ApiError(500, { error: msg });
+}
+
+/**
+ * Parse a single note row out of an RPC response. PostgREST is happy
+ * to return either a single object (for `returns meo.notes`) OR a
+ * one-element array, depending on version and content negotiation -
+ * supabase-js doesn't normalize this for us. So we accept both, plus
+ * raise a clear error if the row is missing or doesn't carry an id
+ * (which would otherwise crash IDB with a useless "not a valid key"
+ * message). The fallback id keeps the on-disk cache consistent in
+ * the rare case the server omits it.
+ */
+function parseNoteRow(raw: unknown, fallbackId: string): EncryptedNoteRow {
+  let r: any = raw;
+  if (Array.isArray(r)) r = r[0];
+  if (!r || typeof r !== 'object') {
+    throw new ApiError(500, { error: 'note RPC returned no row' });
+  }
+  const id: unknown = r.id ?? fallbackId;
+  if (typeof id !== 'string' || id.length === 0) {
+    throw new ApiError(500, { error: 'note RPC returned invalid id' });
+  }
+  return {
+    id,
+    encrypted_content: hexToBase64(r.encrypted_content),
+    nonce: hexToBase64(r.nonce),
+    version: Number(r.version),
+    hlc_timestamp: r.hlc_timestamp,
+    updated_at: typeof r.updated_at === 'string' ? Date.parse(r.updated_at) : Number(r.updated_at),
+    deleted_at: r.deleted_at == null
+      ? null
+      : (typeof r.deleted_at === 'string' ? Date.parse(r.deleted_at) : Number(r.deleted_at)),
+    size_bytes: Number(r.size_bytes ?? 0),
+    is_vault: Boolean(r.is_vault ?? false),
+  };
 }
 
 // PostgREST encodes bytea as a hex string starting with `\x` by default.
