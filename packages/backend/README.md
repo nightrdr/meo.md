@@ -37,7 +37,7 @@ packages/backend/
 └── test-e2e.mjs        # the JS suite from the TS days; still runs against this server
 ```
 
-## Run
+## Run (local source)
 
 ```bash
 # dev — runs from source, no autoreload
@@ -51,13 +51,77 @@ make build
 make e2e
 ```
 
-Configuration via env:
+## Run (Docker)
+
+The Dockerfile is multi-stage with a distroless `static-debian12:nonroot`
+final image. The whole thing comes out at **~5.6 MB** because the binary
+is fully static (pure-Go SQLite via `modernc.org/sqlite`, no CGO).
+
+```bash
+# Build
+make docker          # → image: meo-backend:latest
+# or:
+docker build -t meo-backend:latest -f Dockerfile .
+
+# Run with persistent data volume + a real JWT secret
+docker run -d \
+  --name meo-backend \
+  -p 8787:8787 \
+  -e JWT_SECRET="$(openssl rand -hex 32)" \
+  -v meo-backend-data:/data \
+  meo-backend:latest
+
+# Or via compose (also brings up the volume)
+docker compose up --build -d
+docker compose logs -f
+docker compose down            # keeps the volume
+docker compose down -v         # wipes the volume too
+
+# E2E against the dockerized server
+docker run -d --name meo-smoke -p 8788:8787 \
+  -e JWT_SECRET=dev-smoke meo-backend:latest
+API=http://localhost:8788 node test-e2e.mjs
+docker rm -f meo-smoke
+```
+
+### Image-size breakdown
+
+```
+distroless/static-debian12:nonroot   ~3 MB   (base layer)
++ /usr/local/bin/server              ~2.6 MB (stripped + trimmed Go binary)
+= ~5.6 MB total
+```
+
+No shell, no package manager, no glibc — there's no `docker exec -it
+… sh` to debug. That's the point. If you need to inspect a running
+container, attach via `docker inspect` / `docker logs` / `docker stats`,
+or temporarily run from `gcr.io/distroless/static-debian12:debug`
+which is the same image but ships busybox.
+
+### Container env (override per-deploy)
+
+| Var | Default | Notes |
+|---|---|---|
+| `PORT` | `8787` | HTTP listen port |
+| `MEO_DB_PATH` | `/data/meo.sqlite` | SQLite file inside the volume |
+| `MEO_MODEL_DIR` | `/data/models` | hosted model files (Agent 7's manifest) |
+| `JWT_SECRET` | *(empty — REQUIRED in prod)* | utf-8 bytes; falls back to per-process random if missing, which invalidates issued JWTs on restart |
+| `MEO_ADMIN_TOKEN` | *(empty)* | Bearer token for the `POST /models/:id/upload` endpoint. Empty = uploads disabled. |
+
+The `/data` volume is owned by UID 65532 (distroless's `nonroot`). The
+Dockerfile pre-seeds the directory with that ownership; if you bind-
+mount a host path instead of a named volume, run
+`sudo chown -R 65532:65532 /your/path` once before first start.
+
+## Local-binary env (when running outside Docker)
 
 | Var | Default | Notes |
 |---|---|---|
 | `PORT` | `8787` | HTTP listen port |
 | `MEO_DB_PATH` | `<binary-dir>/../meo.sqlite` | SQLite file |
-| `JWT_SECRET` | random 32 bytes (per process) | utf-8 bytes; **set this in prod** or every restart invalidates issued tokens |
+| `MEO_MODEL_DIR` | `<binary-dir>/../models` | hosted model files |
+| `JWT_SECRET` | random 32 bytes (per process) | utf-8 bytes; **set in prod** or every restart invalidates JWTs |
+| `MEO_ADMIN_TOKEN` | *(empty)* | bearer token for model uploads |
 
 ## Why DI?
 

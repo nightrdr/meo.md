@@ -1,0 +1,12 @@
+# Don't copy build artefacts or local dev state into the image.
+bin/
+meo*.sqlite
+meo*.sqlite-wal
+meo*.sqlite-shm
+.e2e.pid
+test-dist/
+node_modules/
+.git/
+*.md
+Dockerfile
+.dockerignore

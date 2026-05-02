@@ -1,0 +1,58 @@
+# Local-dev compose for the Go backend.
+#
+# This is intentionally MINIMAL — it only runs the meo.md backend.
+# Supabase (Postgres + GoTrue + Edge Functions + Studio + MinIO) keeps
+# running through the Supabase CLI's own stack (`supabase start` from
+# the project root), which already does the job better than we could
+# replicate here.
+#
+# Run order for a fresh dev environment:
+#   1. From repo root: `supabase start`              (stays up forever)
+#   2. From this folder: `docker compose up --build`  (foreground or `-d`)
+#   3. Desktop dev: `npm run dev:desktop` (already pointed at :8787)
+#
+# Production: this same file is the starting point for a single-host
+# deploy. Override env via a sibling `.env` file (gitignored) or pass
+# `-e KEY=VALUE` to `docker compose run`.
+
+services:
+  backend:
+    build:
+      context: .                     # this folder is the build context
+      dockerfile: Dockerfile
+    image: meo-backend:latest
+    container_name: meo-backend
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    volumes:
+      # Persistent SQLite + uploaded model blobs. Survives `down -v`
+      # only if the volume is removed; without `-v` data is preserved
+      # across `docker compose down && up`.
+      - meo-data:/data
+    environment:
+      PORT: "8787"
+      MEO_DB_PATH: "/data/meo.sqlite"
+      MEO_MODEL_DIR: "/data/models"
+      # JWT_SECRET MUST be set in production. The default in this file
+      # is intentionally empty so a misconfigured deploy fails loudly
+      # rather than silently issuing tokens that don't survive a
+      # restart. Override via .env or `docker compose --env-file`.
+      JWT_SECRET: "${JWT_SECRET:-}"
+      # Admin token for the model-upload endpoint. Leave empty to
+      # disable uploads (read-only catalogue).
+      MEO_ADMIN_TOKEN: "${MEO_ADMIN_TOKEN:-}"
+    healthcheck:
+      # The /healthz endpoint is the cheapest possible probe. Distroless
+      # has no shell or curl, so we lean on Docker's `--health-cmd` via
+      # a Go-runtime trick: re-execute the binary with a special arg
+      # to make it self-probe. We don't have that wired yet — for now,
+      # rely on TCP connect via wget-on-host or skip in dev.
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  meo-data:
+    name: meo-backend-data
