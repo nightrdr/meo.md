@@ -4,8 +4,14 @@ import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
+import Table from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableCell from '@tiptap/extension-table-cell';
+import TableHeader from '@tiptap/extension-table-header';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
+import { MathInline, MathBlock } from './editor/mathExtension';
+import { Mermaid } from './editor/mermaidExtension';
 import type { Note } from '@meo/shared';
 import { ATTACHMENT_URL_PREFIX, MAX_ATTACHMENT_BYTES } from '@meo/shared';
 import { Icon } from './Icon';
@@ -133,6 +139,18 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
       // as `- [x] / - [ ]` by markdownFromHtml below.
       TaskList,
       TaskItem.configure({ nested: true }),
+      // GFM-style tables. StarterKit doesn't bundle these so no
+      // collision worry; we still pass `resizable: false` to keep the
+      // simpler editing experience.
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      // KaTeX math (lazy-loads `katex` on first render).
+      MathInline,
+      MathBlock,
+      // Mermaid diagrams (lazy-loads `mermaid` on first render).
+      Mermaid,
       FindExtension,
       MeoCollapseExtension,
     ],
@@ -900,6 +918,30 @@ function Toolbar({
         onClick={() => editor.chain().focus().toggleBlockquote().run()} />
       <Btn icon={<Icon.Hr size={14} />} label="Horizontal rule"
         onClick={() => editor.chain().focus().setHorizontalRule().run()} />
+
+      <Sep />
+
+      {/* Table picker — small dropdown grid */}
+      <TablePicker editor={editor} />
+      <Btn icon={<Icon.Math size={14} />} label="Insert math (LaTeX)"
+        active={editor.isActive('mathInline') || editor.isActive('mathBlock')}
+        onClick={() => {
+          const latex = prompt('LaTeX (e.g. E = mc^2)');
+          if (!latex) return;
+          editor.chain().focus().insertContent({
+            type: 'mathInline',
+            attrs: { latex },
+          }).run();
+        }} />
+      <Btn icon={<Icon.Diagram size={14} />} label="Insert Mermaid diagram"
+        active={editor.isActive('mermaid')}
+        onClick={() => {
+          const sample = 'graph TD\n  A[Start] --> B{Choice}\n  B -->|Yes| C[Done]\n  B -->|No| D[Loop]';
+          editor.chain().focus().insertContent({
+            type: 'mermaid',
+            attrs: { source: sample },
+          }).run();
+        }} />
       <Btn icon={<Icon.Search size={14} />} label={`Find in note (${shortcut('F')})`}
         onClick={onOpenFind} />
 
@@ -943,6 +985,101 @@ function Toolbar({
   );
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// Table picker — small popout grid; hover to size, click to insert.
+// Keyboard shortcut ⌘⌥T inserts a 3×3 table directly.
+// ──────────────────────────────────────────────────────────────────────
+
+function TablePicker({ editor }: { editor: TipTapEditor }) {
+  const [open, setOpen] = useState(false);
+  const [hover, setHover] = useState({ rows: 0, cols: 0 });
+  const ref = useRef<HTMLDivElement>(null);
+  const ROWS = 6, COLS = 8;
+
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (!ref.current) return;
+      if (!ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) {
+      const t = setTimeout(() => document.addEventListener('mousedown', onDocClick), 0);
+      return () => {
+        clearTimeout(t);
+        document.removeEventListener('mousedown', onDocClick);
+      };
+    }
+  }, [open]);
+
+  // Keyboard shortcut: ⌘⌥T (Ctrl+Alt+T on Win/Linux) inserts a 3×3 table.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.altKey && (e.key === 't' || e.key === 'T')) {
+        e.preventDefault();
+        editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [editor]);
+
+  const insert = (rows: number, cols: number) => {
+    setOpen(false);
+    editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
+  };
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        title={`Insert table (${shortcut('T', 'alt')})`}
+        className={editor.isActive('table') ? 'active' : ''}
+        onClick={() => setOpen(o => !o)}
+      >
+        <Icon.Table size={14} />
+      </button>
+      {open && (
+        <div
+          className="table-picker"
+          style={{
+            position: 'absolute', top: '100%', left: 0, marginTop: 4,
+            background: 'var(--overlay)', border: '1px solid var(--paper-edge)',
+            borderRadius: 8, padding: 6,
+            boxShadow: '0 12px 36px rgba(0,0,0,0.18)',
+            zIndex: 100,
+          }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${COLS}, 14px)`, gap: 2 }}>
+            {Array.from({ length: ROWS * COLS }).map((_, idx) => {
+              const r = Math.floor(idx / COLS) + 1;
+              const c = (idx % COLS) + 1;
+              const on = r <= hover.rows && c <= hover.cols;
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  style={{
+                    width: 14, height: 14, padding: 0,
+                    border: '1px solid var(--paper-edge)',
+                    background: on ? 'var(--accent, #4f6b3a)' : 'transparent',
+                    cursor: 'pointer',
+                  }}
+                  onMouseEnter={() => setHover({ rows: r, cols: c })}
+                  onClick={() => insert(r, c)}
+                />
+              );
+            })}
+          </div>
+          <div style={{ marginTop: 4, fontSize: 11, color: 'var(--ink3)', textAlign: 'center' }}>
+            {hover.rows > 0 ? `${hover.rows} × ${hover.cols}` : 'Pick size'}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- markdown ↔ HTML translators ---
 
 // Read the natural dimensions of an image file. Returns undefined for
@@ -971,17 +1108,60 @@ function htmlFromMarkdown(md: string): string {
   const out: string[] = [];
   let inList: null | 'ul' | 'ol' | 'task' = null;
   let inCode = false;
-  for (const raw of lines) {
-    const line = raw.replace(/\r$/, '');
-    if (line.startsWith('```')) {
-      if (inCode) { out.push('</code></pre>'); inCode = false; }
-      else { out.push('<pre><code>'); inCode = true; }
+  let codeLang = '';
+  let codeBuf: string[] = [];
+  let inMathBlock = false;
+  let mathBuf: string[] = [];
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li].replace(/\r$/, '');
+    // ── Fenced code blocks (incl. ```mermaid). ──
+    if (!inMathBlock && line.startsWith('```')) {
+      if (inCode) {
+        if (codeLang === 'mermaid') {
+          out.push(`<pre data-meo-mermaid="true"><code>${escapeHtml(codeBuf.join('\n'))}</code></pre>`);
+        } else {
+          out.push(`<pre><code>${escapeHtml(codeBuf.join('\n'))}</code></pre>`);
+        }
+        inCode = false; codeBuf = []; codeLang = '';
+      } else {
+        closeList();
+        codeLang = line.slice(3).trim();
+        inCode = true;
+      }
       continue;
     }
-    if (inCode) { out.push(escapeHtml(line)); continue; }
+    if (inCode) { codeBuf.push(line); continue; }
+
+    // ── Block math ($$ on its own line opens/closes). ──
+    if (line.trim() === '$$') {
+      if (inMathBlock) {
+        out.push(`<div data-meo-math="block" data-latex="${escapeAttr(mathBuf.join('\n'))}">$$${escapeHtml(mathBuf.join('\n'))}$$</div>`);
+        inMathBlock = false; mathBuf = [];
+      } else {
+        closeList();
+        inMathBlock = true;
+      }
+      continue;
+    }
+    if (inMathBlock) { mathBuf.push(line); continue; }
+
+    // ── GFM table: header line, separator, body rows. ──
+    // Detect by: current line is a "| ... |" row, next line is a
+    // separator like "| --- | --- |".
+    if (/^\s*\|.*\|\s*$/.test(line) && li + 1 < lines.length && /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)+\|?\s*$/.test(lines[li + 1])) {
+      closeList();
+      const tbl = consumeTable(lines, li);
+      out.push(tbl.html);
+      li = tbl.nextIndex - 1;
+      continue;
+    }
+
     if (line.startsWith('# ')) { closeList(); out.push(`<h1>${inline(line.slice(2))}</h1>`); continue; }
     if (line.startsWith('## ')) { closeList(); out.push(`<h2>${inline(line.slice(3))}</h2>`); continue; }
     if (line.startsWith('### ')) { closeList(); out.push(`<h3>${inline(line.slice(4))}</h3>`); continue; }
+    if (line.startsWith('#### ')) { closeList(); out.push(`<h4>${inline(line.slice(5))}</h4>`); continue; }
+    if (line.startsWith('##### ')) { closeList(); out.push(`<h5>${inline(line.slice(6))}</h5>`); continue; }
+    if (line.startsWith('###### ')) { closeList(); out.push(`<h6>${inline(line.slice(7))}</h6>`); continue; }
     if (line.startsWith('> ')) { closeList(); out.push(`<blockquote><p>${inline(line.slice(2))}</p></blockquote>`); continue; }
     if (/^---+$/.test(line)) { closeList(); out.push('<hr>'); continue; }
     // Task-list items must be checked BEFORE the generic ulMatch.
@@ -1001,7 +1181,8 @@ function htmlFromMarkdown(md: string): string {
     out.push(`<p>${inline(line)}</p>`);
   }
   closeList();
-  if (inCode) out.push('</code></pre>');
+  if (inCode) out.push(`<pre><code>${escapeHtml(codeBuf.join('\n'))}</code></pre>`);
+  if (inMathBlock) out.push(`<div data-meo-math="block" data-latex="${escapeAttr(mathBuf.join('\n'))}">$$${escapeHtml(mathBuf.join('\n'))}$$</div>`);
   return out.join('');
 
   function openList(kind: 'ul' | 'ol' | 'task') {
@@ -1022,6 +1203,34 @@ function htmlFromMarkdown(md: string): string {
   }
 }
 
+/** Parse a GFM table starting at `lines[start]`. Returns the rendered HTML and the index AFTER the table. */
+function consumeTable(lines: string[], start: number): { html: string; nextIndex: number } {
+  const splitRow = (raw: string): string[] => {
+    let s = raw.trim();
+    if (s.startsWith('|')) s = s.slice(1);
+    if (s.endsWith('|')) s = s.slice(0, -1);
+    return s.split('|').map((c) => c.trim());
+  };
+  const headerCells = splitRow(lines[start]);
+  // Skip the separator line.
+  let i = start + 2;
+  const rows: string[][] = [];
+  while (i < lines.length) {
+    const row = lines[i];
+    if (!/^\s*\|.*\|\s*$/.test(row)) break;
+    rows.push(splitRow(row));
+    i++;
+  }
+  const headHtml = headerCells.map((c) => `<th><p>${inline(c)}</p></th>`).join('');
+  const bodyHtml = rows
+    .map((r) => `<tr>${r.map((c) => `<td><p>${inline(c)}</p></td>`).join('')}</tr>`)
+    .join('');
+  return {
+    html: `<table><tbody><tr>${headHtml}</tr>${bodyHtml}</tbody></table>`,
+    nextIndex: i,
+  };
+}
+
 function inline(s: string): string {
   // First extract image references so escapeHtml doesn't mangle them.
   // We use a placeholder strategy: replace ![alt](url) with a unique token,
@@ -1038,7 +1247,16 @@ function inline(s: string): string {
     links.push({ text, href });
     return ` LNK${lidx++}`;
   });
-  let html = escapeHtml(withLinks)
+  // Inline math: `$x$`. We require a non-whitespace, non-$ char after
+  // the opening `$` so currency strings (e.g. "the price is $5") don't
+  // get parsed as math.
+  const maths: { latex: string }[] = [];
+  let midx = 0;
+  const withMaths = withLinks.replace(/\$([^\s$][^$\n]*?)\$/g, (_, latex: string) => {
+    maths.push({ latex });
+    return ` MTH${midx++}`;
+  });
+  let html = escapeHtml(withMaths)
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
@@ -1055,6 +1273,11 @@ function inline(s: string): string {
   html = html.replace(/ LNK(\d+)/g, (_m, i: string) => {
     const it = links[Number(i)];
     return `<a href="${escapeAttr(it.href)}">${escapeHtml(it.text)}</a>`;
+  });
+  // Re-insert inline math
+  html = html.replace(/ MTH(\d+)/g, (_m, i: string) => {
+    const it = maths[Number(i)];
+    return `<span data-meo-math="inline" data-latex="${escapeAttr(it.latex)}">$${escapeHtml(it.latex)}$</span>`;
   });
   return html;
 }
@@ -1091,7 +1314,55 @@ function walk(node: Node): string {
     case 'code':
       if (el.parentElement?.tagName.toLowerCase() === 'pre') return inner;
       return `\`${inner}\``;
-    case 'pre': return `\n\`\`\`\n${inner.trim()}\n\`\`\`\n`;
+    case 'pre': {
+      // Mermaid fence — `<pre data-meo-mermaid="true">` round-trips
+      // back to a ```mermaid block so the source is preserved.
+      if (el.getAttribute('data-meo-mermaid') === 'true') {
+        const code = el.querySelector('code');
+        const src = (code ? code.textContent : el.textContent) ?? '';
+        return `\n\`\`\`mermaid\n${src.replace(/\n+$/, '')}\n\`\`\`\n`;
+      }
+      return `\n\`\`\`\n${inner.trim()}\n\`\`\`\n`;
+    }
+    // Block math: `<div data-meo-math="block" data-latex="…">` →
+    // `$$…$$` on its own line.
+    case 'div': {
+      if (el.getAttribute('data-meo-math') === 'block') {
+        const latex = el.getAttribute('data-latex') ?? '';
+        return `\n$$\n${latex}\n$$\n`;
+      }
+      return inner;
+    }
+    case 'span': {
+      // Inline math: `<span data-meo-math="inline" data-latex="…">` → `$…$`
+      if (el.getAttribute('data-meo-math') === 'inline') {
+        const latex = el.getAttribute('data-latex') ?? '';
+        return `$${latex}$`;
+      }
+      return inner;
+    }
+    // ── GFM tables ──
+    case 'table': {
+      // TipTap renders tables as `<table><tbody><tr>...</tr></tbody></table>`.
+      // The first <tr> holds <th>s in our convention; the rest are body rows.
+      const rows = Array.from(el.querySelectorAll('tr'));
+      if (rows.length === 0) return '';
+      const cellText = (cell: Element) => walk(cell).replace(/\n+/g, ' ').trim() || ' ';
+      const headerRow = rows[0];
+      const headerCells = Array.from(headerRow.children).map((c) => cellText(c));
+      const widths = headerCells.map(() => 3);
+      const lines: string[] = [];
+      lines.push('| ' + headerCells.join(' | ') + ' |');
+      lines.push('|' + widths.map(() => ' --- ').join('|') + '|');
+      for (let r = 1; r < rows.length; r++) {
+        const cells = Array.from(rows[r].children).map((c) => cellText(c));
+        // Pad shorter rows so the table stays valid GFM.
+        while (cells.length < headerCells.length) cells.push(' ');
+        lines.push('| ' + cells.join(' | ') + ' |');
+      }
+      return '\n' + lines.join('\n') + '\n';
+    }
+    case 'tbody': case 'thead': case 'tr': case 'td': case 'th': return inner;
     case 'blockquote': return inner.split('\n').filter(Boolean).map(l => `> ${l.replace(/^\s+/, '')}`).join('\n') + '\n';
     case 'ul': {
       // Task list — TipTap marks <ul> with data-type="taskList".
