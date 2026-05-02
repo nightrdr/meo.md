@@ -568,6 +568,14 @@ export default function App() {
       console.warn('[meo] menu event not yet wired: mode change');
     },
     onToggleSidebar: toggleSidebar,
+    // Collapse/expand section bridges — dispatched as DOM CustomEvents
+    // and consumed by Editor.tsx (Agent 4). Until Agent 5's menu wires
+    // the matching ids these only fire via keyboard shortcut, but the
+    // handlers are in place.
+    onCollapseSection: () => document.dispatchEvent(new CustomEvent('meo:collapse-section')),
+    onExpandSection: () => document.dispatchEvent(new CustomEvent('meo:expand-section')),
+    onCollapseAllSections: () => document.dispatchEvent(new CustomEvent('meo:collapse-all')),
+    onExpandAllSections: () => document.dispatchEvent(new CustomEvent('meo:expand-all')),
     // export/import/print/insert-link/new-tag/new-device intentionally
     // omitted — useMenuEvents will console.warn until those ship.
   }), [

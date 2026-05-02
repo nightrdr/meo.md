@@ -67,6 +67,21 @@ export function Subscription({ session }: Props) {
     window.open(PADDLE_PORTAL_URL, '_blank', 'noopener,noreferrer');
   };
 
+  // Cross-store conflict guard (Agent 10 deliverable §5). On the desktop
+  // build, the only purchase rail is Paddle; if the server says the user is
+  // already subscribed via RevenueCat (an active App Store / Play Store sub),
+  // we refuse to launch checkout and explain how to manage it instead.
+  // The webhooks return 409 for the same case server-side; this is the
+  // client-side mirror so users never reach a confusing checkout error.
+  const [conflict, setConflict] = useState<null | 'rc-on-paddle'>(null);
+  const onUpgrade = () => {
+    if (source === 'revenuecat' && tier !== 'free') {
+      setConflict('rc-on-paddle');
+      return;
+    }
+    onManagePaddle();
+  };
+
   return (
     <div>
       <section className="settings-section">
@@ -162,14 +177,14 @@ export function Subscription({ session }: Props) {
                 name="Hobbyist"
                 price="$5/mo"
                 blurb={TIER_BLURBS.hobbyist}
-                onClick={onManagePaddle}
+                onClick={onUpgrade}
                 cta="Upgrade"
               />
               <UpgradeTierCard
                 name="Business"
                 price="$25/mo"
                 blurb={TIER_BLURBS.business}
-                onClick={onManagePaddle}
+                onClick={onUpgrade}
                 cta="Upgrade"
                 highlight
               />
@@ -186,6 +201,37 @@ export function Subscription({ session }: Props) {
           </p>
         )}
       </section>
+
+      {conflict === 'rc-on-paddle' && (
+        <CrossStoreConflictModal
+          message="Your plan is already active via the App Store. Open the iOS / Android app to manage it."
+          onClose={() => setConflict(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+interface CrossStoreConflictModalProps {
+  message: string;
+  onClose: () => void;
+}
+
+/**
+ * Cross-store conflict explainer (Agent 10 §5). Used both inline (when the
+ * user clicks Upgrade on the wrong store) and as a reusable surface for the
+ * mobile app's mirror flow.
+ */
+export function CrossStoreConflictModal({ message, onClose }: CrossStoreConflictModalProps) {
+  return (
+    <div className="cross-store-overlay" onMouseDown={onClose} role="dialog" aria-modal>
+      <div className="cross-store-card" onMouseDown={(e) => e.stopPropagation()}>
+        <h3>Already subscribed</h3>
+        <p>{message}</p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button className="btn primary" onClick={onClose}>Got it</button>
+        </div>
+      </div>
     </div>
   );
 }

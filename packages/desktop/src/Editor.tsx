@@ -13,6 +13,18 @@ import { SlashMenu } from './SlashMenu';
 import { AttachmentImageExtension, makeAttachmentsClient } from './AttachmentRenderer';
 import { getAIRuntime } from './aiStore';
 import { shortcut } from './platform';
+import {
+  MeoCollapseExtension,
+  meoCollapsePluginKey,
+  collapseCurrentSection,
+  expandCurrentSection,
+  collapseAllSections,
+  expandAllSections,
+  anchorsFromState,
+  positionsFromAnchors,
+  restoreCollapsed,
+} from './editor/collapseExtension';
+import { getMeta, setMeta } from './storage';
 
 interface Props {
   note: Note;
@@ -122,6 +134,7 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
       TaskList,
       TaskItem.configure({ nested: true }),
       FindExtension,
+      MeoCollapseExtension,
     ],
     content: htmlFromMarkdown(note.body),
     onUpdate: ({ editor }) => {
@@ -226,6 +239,54 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
     if (!editor) return;
     editor.setEditable(mode !== 'preview');
   }, [editor, mode]);
+
+  // ── Collapse-section persistence (Agent 4) ──
+  // Stored as `meta.collapsed_headings: { [noteId]: string[] }` where
+  // each entry is a "level:lowercased-text" anchor (see collapseExtension).
+  // We restore on note-open and snapshot whenever the plugin state
+  // changes (debounced via rAF).
+  const collapseRestoredFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!editor) return;
+    if (collapseRestoredFor.current === note.id) return;
+    let cancelled = false;
+    (async () => {
+      const meta = await getMeta();
+      const anchors = meta.collapsed_headings?.[note.id] ?? [];
+      if (cancelled || !editor) return;
+      const positions = positionsFromAnchors(editor.view.state, anchors);
+      restoreCollapsed(editor.view, positions);
+      collapseRestoredFor.current = note.id;
+    })();
+    return () => { cancelled = true; };
+  }, [editor, note.id]);
+
+  // Persist collapsed-set changes (debounced).
+  useEffect(() => {
+    if (!editor) return;
+    let raf = 0;
+    let lastSerialized = '';
+    const onUpdate = () => {
+      if (raf) cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(async () => {
+        if (!editor) return;
+        const anchors = anchorsFromState(editor.view.state);
+        const ser = anchors.join('\n');
+        if (ser === lastSerialized) return;
+        lastSerialized = ser;
+        const meta = await getMeta();
+        const map = { ...(meta.collapsed_headings ?? {}) };
+        if (anchors.length === 0) delete map[note.id];
+        else map[note.id] = anchors;
+        await setMeta({ collapsed_headings: map });
+      });
+    };
+    editor.on('transaction', onUpdate);
+    return () => {
+      editor.off('transaction', onUpdate);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [editor, note.id]);
   const findTotal: number = useMemo(() => {
     if (!editor || !findQuery) return 0;
     return (findPluginKey.getState(editor.view.state) as any)?.total ?? 0;
@@ -367,10 +428,50 @@ export function Editor({ note, breadcrumb, status, statusMsg, wordCount, modelId
         if (bubble.kind !== 'idle') { cancelBubble(); e.stopPropagation(); e.preventDefault(); return; }
         if (findOpen) { setFindOpen(false); setFindQuery(''); e.stopPropagation(); e.preventDefault(); return; }
       }
+      // ── Collapse / expand sections (Agent 4) ──
+      // ⌥⌘← collapse current section, ⌥⌘→ expand current section.
+      // ⇧⌥⌘← collapse all, ⇧⌥⌘→ expand all.
+      if (editor && e.altKey && (e.metaKey || e.ctrlKey) && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        const all = e.shiftKey;
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          if (all) collapseAllSections(editor.view);
+          else collapseCurrentSection(editor.view);
+          return;
+        }
+        if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          if (all) expandAllSections(editor.view);
+          else expandCurrentSection(editor.view);
+          return;
+        }
+      }
     };
     document.addEventListener('keydown', onKey, true); // capture phase
     return () => document.removeEventListener('keydown', onKey, true);
   }, [bubble, findOpen, cancelBubble, editor]);
+
+  // ── Collapse menu-event bridge ──
+  // App.tsx (via useMenuEvents) dispatches `meo:collapse-section`
+  // / `meo:expand-section` / `meo:collapse-all` / `meo:expand-all`
+  // CustomEvents on `document`. We forward them to the active editor.
+  useEffect(() => {
+    if (!editor) return;
+    const onCollapseOne = () => collapseCurrentSection(editor.view);
+    const onExpandOne = () => expandCurrentSection(editor.view);
+    const onCollapseAll = () => collapseAllSections(editor.view);
+    const onExpandAll = () => expandAllSections(editor.view);
+    document.addEventListener('meo:collapse-section', onCollapseOne);
+    document.addEventListener('meo:expand-section', onExpandOne);
+    document.addEventListener('meo:collapse-all', onCollapseAll);
+    document.addEventListener('meo:expand-all', onExpandAll);
+    return () => {
+      document.removeEventListener('meo:collapse-section', onCollapseOne);
+      document.removeEventListener('meo:expand-section', onExpandOne);
+      document.removeEventListener('meo:collapse-all', onCollapseAll);
+      document.removeEventListener('meo:expand-all', onExpandAll);
+    };
+  }, [editor]);
 
   const addTag = () => {
     const t = tagInput.trim().replace(/^#/, '').toLowerCase();

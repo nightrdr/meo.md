@@ -52,6 +52,14 @@ export interface MenuHandlers {
   onToggleSidebar?: () => void;
   onModeChange?: (mode: EditorMode) => void;
   onAskMeo?: () => void;
+  // Collapse / expand sections by heading rank (Agent 4). The menu
+  // items are placeholders — Agent 5's macOS menu doesn't ship these
+  // ids yet, but the handlers are wired here so when it does, the
+  // editor will respond. Keyboard shortcuts cover the gap meanwhile.
+  onCollapseSection?: () => void;
+  onExpandSection?: () => void;
+  onCollapseAllSections?: () => void;
+  onExpandAllSections?: () => void;
 }
 
 // Every menu id we listen for. Keep this in sync with `lib.rs`.
@@ -77,6 +85,10 @@ const MENU_IDS = [
   'mode.split',
   'mode.preview',
   'ask-meo',
+  'collapse-section',
+  'expand-section',
+  'collapse-all-sections',
+  'expand-all-sections',
 ] as const;
 
 type MenuId = (typeof MENU_IDS)[number];
@@ -152,6 +164,10 @@ function dispatch(id: MenuId, h: MenuHandlers): void {
     case 'mode.split':      return runMode(id, h, 'split');
     case 'mode.preview':    return runMode(id, h, 'preview');
     case 'ask-meo':         return runOrWarn(id, h.onAskMeo);
+    case 'collapse-section':      return runOrWarn(id, h.onCollapseSection);
+    case 'expand-section':        return runOrWarn(id, h.onExpandSection);
+    case 'collapse-all-sections': return runOrWarn(id, h.onCollapseAllSections);
+    case 'expand-all-sections':   return runOrWarn(id, h.onExpandAllSections);
   }
 }
 

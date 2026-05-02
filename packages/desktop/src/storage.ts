@@ -13,6 +13,10 @@ interface Meta {
   model_id?: string;
   expanded_folders?: string[];
   sidebar_hidden?: boolean;      // collapse the leftmost sidebar column
+  // Per-note collapsed-section anchors (Agent 4). Each entry is
+  // `<level>:<lowercased-trimmed-heading-text>`. Restored by Editor.tsx
+  // when a note opens.
+  collapsed_headings?: Record<string, string[]>;
   // first-run setup (Agent 7)
   onboarding_done?: boolean;
   installed_models?: string[];   // ids of model files cached in this device

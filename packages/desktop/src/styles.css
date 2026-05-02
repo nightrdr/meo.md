@@ -1487,6 +1487,135 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .ai-open-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .ai-open-btn .kbd { margin-left: auto; }
 
+/* "Upgrade Meo" banner — shown above Ask Meo for free-tier users only.
+   Uses the accent (green) palette so it doesn't compete with the AI button
+   directly below it, but is warm enough to feel inviting rather than naggy. */
+.upgrade-banner {
+  width: calc(100% - 20px);
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  margin: 8px 10px 0;
+  border: 1px solid var(--accent);
+  background: var(--paper-deep);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12.5px; font-weight: 600;
+  color: var(--accent-ink);
+  transition: background 0.12s, border-color 0.12s, transform 0.12s;
+  text-align: left;
+}
+.upgrade-banner:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent-ink);
+}
+.upgrade-banner:active {
+  transform: translateY(1px);
+}
+.upgrade-banner .hint {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--ink3);
+  margin-left: auto;
+}
+@media (prefers-color-scheme: dark) {
+  .upgrade-banner { color: var(--ink); background: rgba(79, 107, 58, 0.10); }
+  .upgrade-banner:hover { background: var(--accent-soft); }
+}
+
+/* Settings tabs (AI / Subscription / …). Sits between header and body. */
+.settings-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--paper-edge);
+}
+.settings-tab {
+  background: transparent;
+  border: none;
+  padding: 10px 14px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink3);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.12s, border-color 0.12s;
+}
+.settings-tab:hover { color: var(--ink2); }
+.settings-tab.active {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+/* Subscription pane: side-by-side tier cards for the upgrade options. */
+.upgrade-tiers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 10px 0 6px;
+}
+.upgrade-tier {
+  border: 1px solid var(--paper-edge);
+  border-radius: 10px;
+  background: var(--paper);
+  padding: 14px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.upgrade-tier.highlight {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.upgrade-tier-name {
+  font-family: var(--font-serif);
+  font-size: 15px; font-weight: 600;
+  color: var(--ink);
+}
+.upgrade-tier-price {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink2);
+}
+.upgrade-tier-blurb {
+  font-size: 12.5px;
+  color: var(--ink3);
+  line-height: 1.5;
+  flex: 1;
+}
+.upgrade-tier .btn { align-self: flex-start; }
+
+/* Cross-store conflict modal (Agent 10 §5). Shown when the user attempts
+   to upgrade on the wrong store. Floats above the Settings card so it
+   reads as a definitive answer rather than an inline warning. */
+.cross-store-overlay {
+  position: fixed; inset: 0;
+  background: rgba(31,28,23,0.40);
+  backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 300;
+}
+.cross-store-card {
+  width: 380px;
+  max-width: calc(100% - 32px);
+  background: var(--overlay);
+  border: 1px solid var(--paper-edge);
+  border-radius: 12px;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.30);
+  padding: 18px 20px;
+}
+.cross-store-card h3 {
+  margin: 0 0 6px;
+  font-family: var(--font-serif);
+  font-size: 16px;
+}
+.cross-store-card p {
+  margin: 0 0 14px;
+  color: var(--ink2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 /* ─── AI panel (right drawer) ─────────────────────────── */
 
 .app.ai-open {
@@ -1748,6 +1877,80 @@ button, input, textarea, select { font: inherit; color: inherit; }
 }
 .find-bar .find-btn:hover { background: var(--hover); color: var(--ink); }
 .find-bar .find-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ── Section collapse / expand (Agent 4) ── */
+.ProseMirror h1,
+.ProseMirror h2,
+.ProseMirror h3,
+.ProseMirror h4,
+.ProseMirror h5,
+.ProseMirror h6 {
+  position: relative;
+}
+.ProseMirror .meo-collapse-toggle {
+  position: absolute;
+  left: -22px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px; height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 120ms, color 120ms;
+  border: none;
+  background: transparent;
+  color: var(--ink3);
+  cursor: pointer;
+  padding: 0;
+  border-radius: 3px;
+  user-select: none;
+}
+.ProseMirror h1:hover .meo-collapse-toggle,
+.ProseMirror h2:hover .meo-collapse-toggle,
+.ProseMirror h3:hover .meo-collapse-toggle,
+.ProseMirror h4:hover .meo-collapse-toggle,
+.ProseMirror h5:hover .meo-collapse-toggle,
+.ProseMirror h6:hover .meo-collapse-toggle {
+  opacity: 1;
+}
+.ProseMirror .meo-collapse-toggle.collapsed {
+  opacity: 1;
+  color: var(--accent-ink);
+}
+.ProseMirror .meo-collapse-toggle:hover {
+  background: var(--paper-deep);
+  color: var(--accent-ink);
+}
+.ProseMirror .meo-collapse-toggle .chev {
+  transition: transform 120ms ease-out;
+  transform: rotate(90deg);
+}
+.ProseMirror .meo-collapse-toggle.collapsed .chev {
+  transform: rotate(0deg);
+}
+
+/* Hidden range — anything wrapped by the inline decoration is gone
+   from the rendered DOM but still in the document model. */
+.ProseMirror .meo-collapsed-hidden {
+  display: none !important;
+}
+
+/* "N items hidden" pill, shown right after a collapsed heading. */
+.ProseMirror .meo-collapsed-pill {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 1px 8px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--ink3);
+  background: var(--paper-deep);
+  border: 1px solid var(--paper-edge);
+  border-radius: 999px;
+  vertical-align: middle;
+  user-select: none;
+}
 
 /* Search match decoration applied by ProseMirror plugin */
 .ProseMirror .meo-find-hit {
