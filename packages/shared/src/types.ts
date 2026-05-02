@@ -50,7 +50,18 @@ export interface EncryptedNoteRow {
 }
 
 export interface AuthSignupResponse { user_id: string; }
-export interface AuthLoginResponse { jwt: string; has_account: boolean; user_id: string; }
+export interface AuthLoginResponse {
+  jwt: string;
+  has_account: boolean;
+  user_id: string;
+  /**
+   * Long-lived refresh token (Supabase). Persisted alongside the access
+   * JWT so cold starts can mint a fresh access token without forcing
+   * the user back through OTP. Optional because legacy backends may
+   * not surface it.
+   */
+  refresh_token?: string;
+}
 export interface SyncResponse { notes: EncryptedNoteRow[]; cursor: number; }
 
 // ----------------------------------------------------------------------------

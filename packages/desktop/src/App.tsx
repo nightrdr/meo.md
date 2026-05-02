@@ -140,22 +140,51 @@ export default function App() {
   // ─── Cold-start auth routing (Agent 1) ───
   // Decide whether to send the user straight into biometric unlock or
   // start at the email screen. The check is conservative: we require
-  // a non-expired JWT *and* a wrap blob *and* the biometric_enabled
+  // a usable access JWT *and* a wrap blob *and* the biometric_enabled
   // flag to be on. Any failure defaults to the email/passphrase flow.
+  //
+  // "Usable" used to mean "JWT is still inside its 1-hour TTL", but
+  // that forced users back through OTP every restart past an hour.
+  // We now also try to silently mint a new access JWT from the stored
+  // refresh token when the access JWT is expired - same UX as native
+  // mobile apps where you only sign in once until the refresh token
+  // is revoked or rotated out (default Supabase TTL: 30 days, sliding).
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const meta = await getMeta();
         const exp = meta.jwt ? jwtExpMs(meta.jwt) : null;
-        const hasValidJwt = !!meta.jwt && !!exp && Date.now() < exp;
+        let hasValidJwt = !!meta.jwt && !!exp && Date.now() < exp;
         const hasWrap = !!meta.master_wrap_blob && !!meta.master_wrap_nonce;
+
+        // Access JWT is dead but a refresh token survives - try a
+        // silent refresh against Supabase. If it succeeds we keep
+        // biometric / wrap state; if it fails (refresh token revoked,
+        // user signed out elsewhere, etc.) we fall through to OTP.
+        if (!hasValidJwt && meta.refresh_token) {
+          try {
+            const api = new SupabaseApiClient({ url: supabaseUrl, anonKey: supabaseAnonKey });
+            const r = await api.refreshAccessToken(meta.refresh_token);
+            await setMeta({
+              jwt: r.jwt,
+              refresh_token: r.refresh_token ?? meta.refresh_token,
+              user_id: r.user_id,
+            });
+            hasValidJwt = true;
+          } catch {
+            // refresh token is dead - clear it so we don't keep retrying
+            await setMeta({ refresh_token: undefined });
+          }
+        }
+
         if (hasValidJwt && hasWrap && meta.biometric_enabled !== false) {
           if (!cancelled) setAuthStart({ mode: 'biometric', email: meta.email });
           return;
         }
-        // JWT expired but wrap data left behind - clean up so the
-        // next biometric prompt isn't a no-op against stale meta.
+        // JWT expired (and refresh failed or absent) but wrap data
+        // left behind - clean up so the next biometric prompt isn't
+        // a no-op against stale meta.
         if (!hasValidJwt && hasWrap) {
           await setMeta({
             master_wrap_blob: undefined,

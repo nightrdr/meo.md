@@ -137,7 +137,16 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
       }
       const code = otp.trim().replace(/\s+/g, '');
       const r = await (api as any).verifyEmailOtp(email, code);
-      await setMeta({ jwt: r.jwt, user_id: r.user_id, email });
+      // Persist refresh_token alongside the access JWT so cold starts
+      // past the 1-hour JWT TTL can mint a new token silently instead
+      // of forcing OTP again. Falls back to undefined on backends that
+      // don't surface a refresh token (legacy Hono).
+      await setMeta({
+        jwt: r.jwt,
+        refresh_token: r.refresh_token,
+        user_id: r.user_id,
+        email,
+      });
       setPendingJwt(r.jwt);
       setPendingUserId(r.user_id);
       setMode(r.has_account ? 'unlock' : 'setup');

@@ -3,6 +3,13 @@ import type { EncryptedNoteRow, AccountWrapper } from '@meo/shared';
 
 interface Meta {
   jwt?: string;
+  /**
+   * Long-lived Supabase refresh token. Persisted so cold starts past
+   * the access JWT's 1-hour TTL can mint a new access token silently
+   * (via api.refreshAccessToken) instead of forcing the user back
+   * through email-OTP. Rotated on every successful refresh.
+   */
+  refresh_token?: string;
   user_id?: string;
   email?: string;
   sync_cursor: number;

@@ -89,7 +89,7 @@ export class SupabaseApiClient {
     const { data, error } = await this.sb.auth.signInWithPassword({ email, password });
     if (error) throw new ApiError(error.status ?? 401, { error: error.message, code: (error as any).code });
     if (!data.session || !data.user) throw new ApiError(500, { error: 'login returned no session' });
-    return this.adoptSession(data.session.access_token, data.user.id);
+    return this.adoptSession(data.session.access_token, data.user.id, data.session.refresh_token);
   }
 
   /**
@@ -126,7 +126,20 @@ export class SupabaseApiClient {
     const { data, error } = await this.sb.auth.verifyOtp({ email, token, type: 'email' });
     if (error) throw new ApiError(error.status ?? 400, { error: error.message, code: (error as any).code });
     if (!data.session || !data.user) throw new ApiError(500, { error: 'verifyOtp returned no session' });
-    return this.adoptSession(data.session.access_token, data.user.id);
+    return this.adoptSession(data.session.access_token, data.user.id, data.session.refresh_token);
+  }
+
+  /**
+   * Cold-start refresh path. Given a long-lived refresh token from a
+   * previous session, mint a new access JWT (and a rotated refresh
+   * token) without going through OTP again. Throws on a revoked /
+   * expired refresh token so the caller can fall back to OTP.
+   */
+  async refreshAccessToken(refreshToken: string): Promise<AuthLoginResponse> {
+    const { data, error } = await this.sb.auth.refreshSession({ refresh_token: refreshToken });
+    if (error) throw new ApiError(error.status ?? 401, { error: error.message, code: (error as any).code });
+    if (!data.session || !data.user) throw new ApiError(401, { error: 'refresh returned no session' });
+    return this.adoptSession(data.session.access_token, data.user.id, data.session.refresh_token);
   }
 
   /**
@@ -134,7 +147,7 @@ export class SupabaseApiClient {
    * the JWT on the rest client, look up has_account, and return the
    * shape the UI expects.
    */
-  private async adoptSession(jwt: string, userId: string): Promise<AuthLoginResponse> {
+  private async adoptSession(jwt: string, userId: string, refreshToken?: string): Promise<AuthLoginResponse> {
     this.jwt = jwt;
     this.userId = userId;
     (this.sb as any).rest.headers['authorization'] = `Bearer ${jwt}`;
@@ -143,7 +156,7 @@ export class SupabaseApiClient {
       .select('user_id', { count: 'exact', head: true })
       .eq('user_id', userId);
     if (error) throw new ApiError(500, { error: error.message });
-    return { jwt, has_account: (count ?? 0) > 0, user_id: userId };
+    return { jwt, has_account: (count ?? 0) > 0, user_id: userId, refresh_token: refreshToken };
   }
 
   async getAccount(): Promise<AccountWrapper> {
