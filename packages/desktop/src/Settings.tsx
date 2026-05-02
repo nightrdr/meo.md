@@ -27,6 +27,11 @@ import { getMeta, setMeta } from './storage';
 
 export type SettingsTab = 'ai' | 'subscription' | 'devices' | 'security';
 
+// Sub-section within the AI tab. The user picks one via the side-nav
+// on the left of the AI body; the right pane renders just that section.
+// Defaults to 'local' which is the most common reason to open this tab.
+type AISection = 'local' | 'cloud' | 'embeddings';
+
 interface PullState {
   modelId: string;
   status: string;
@@ -53,6 +58,7 @@ interface DiscoveredModel {
 
 export function Settings({ session, notes, modelId, initialTab = 'ai', onSelectModel, onClose }: Props) {
   const [tab, setTab] = useState<SettingsTab>(initialTab);
+  const [aiSection, setAiSection] = useState<AISection>('local');
   const [discovered, setDiscovered] = useState<DiscoveredModel[]>([]);
   const [ollamaUp, setOllamaUp] = useState<boolean | null>(null);
   const [pulls, setPulls] = useState<Record<string, PullState>>({});
@@ -210,110 +216,142 @@ export function Settings({ session, notes, modelId, initialTab = 'ai', onSelectM
         )}
 
         {tab === 'ai' && (
-        <div className="settings-body">
-          {/* ─── Local models ─── */}
-          <section className="settings-section">
-            <h2>Local models</h2>
-            <p className="muted">
-              Models run on this device with no internet. We use Ollama as the runtime.
-            </p>
-
-            {ollamaUp === false && (
-              <div className="settings-callout warn">
-                <Icon.Warning size={13} stroke="var(--ai)" />
-                <div>
-                  <b>Ollama is not running.</b><br />
-                  Install from <a href="https://ollama.com/download" target="_blank" rel="noreferrer">ollama.com/download</a> and start it. Then come back and reload.
-                </div>
-              </div>
-            )}
-
-            <div className="model-list">
-              {discovered.map(d => (
-                <ModelRow
-                  key={d.id}
-                  rowId={d.id}
-                  name={d.name}
-                  meta={[d.size, d.tag].filter(Boolean).join(' · ')}
-                  state="installed"
-                  selected={d.id === modelId}
-                  onSelect={() => onSelectModel(d.id)}
-                />
-              ))}
-              {staticRows.map(s => {
-                const pull$ = pulls[s.id];
-                const state = pull$ ? 'pulling' : 'available';
-                return (
-                  <ModelRow
-                    key={s.id}
-                    rowId={s.id}
-                    name={s.name}
-                    meta={[s.size, s.tag].filter(Boolean).join(' · ')}
-                    state={state}
-                    pullState={pull$}
-                    onInstall={() => pull(s.id)}
-                  />
-                );
-              })}
-            </div>
-
-            <p className="muted small">
-              meo.md doesn't bundle Ollama. Models pulled here are stored in <code>~/.ollama/models/</code> and managed by Ollama itself.
-            </p>
-          </section>
-
-          {/* ─── Embeddings ─── */}
-          <section className="settings-section">
-            <h2>Embeddings</h2>
-            <p className="muted">
-              Embeddings power Ask Meo's retrieval. They run locally on this device, never uploaded.
-            </p>
-
-            <div className="settings-row">
-              <div>
-                <div className="settings-row-label">Model</div>
-                <div className="settings-row-value">{embedderId ?? <span className="muted">not loaded yet - open Ask Meo to load</span>}</div>
-              </div>
-            </div>
-
-            <div className="settings-row">
-              <div>
-                <div className="settings-row-label">Embeds</div>
-                <div className="settings-row-value">title + body + tags + folder</div>
-              </div>
-            </div>
-
-            <div className="settings-row">
-              <div style={{ flex: 1 }}>
-                <div className="settings-row-label">Indexed</div>
-                <div className="settings-row-value">
-                  {indexed
-                    ? `${indexed.done} / ${indexed.total} notes`
-                    : <span className="muted">not loaded yet</span>}
-                </div>
-                {indexed && indexed.total > 0 && (
-                  <div className="progress-bar">
-                    <div
-                      className="progress-fill"
-                      style={{ width: `${Math.min(100, (indexed.done / indexed.total) * 100)}%` }}
-                    />
-                  </div>
-                )}
-              </div>
+          <div className="settings-body settings-body-with-subnav">
+            <nav className="settings-subnav">
               <button
-                className="btn"
-                disabled={reindexing}
-                onClick={forceReindex}
-                title="Drop all embeddings and re-embed every note"
+                className={`settings-subnav-item ${aiSection === 'local' ? 'active' : ''}`}
+                onClick={() => setAiSection('local')}
+                type="button"
               >
-                {reindexing ? 'Re-indexing…' : 'Force re-index'}
+                <span className="model-dot" style={{ background: '#4F6B3A' }} />
+                Local models
               </button>
-            </div>
-          </section>
+              <button
+                className={`settings-subnav-item ${aiSection === 'cloud' ? 'active' : ''}`}
+                onClick={() => setAiSection('cloud')}
+                type="button"
+              >
+                <span className="model-dot" style={{ background: '#B04A3A' }} />
+                Cloud models
+              </button>
+              <button
+                className={`settings-subnav-item ${aiSection === 'embeddings' ? 'active' : ''}`}
+                onClick={() => setAiSection('embeddings')}
+                type="button"
+              >
+                <span className="model-dot" style={{ background: '#8B6F4A' }} />
+                Embeddings
+              </button>
+            </nav>
 
-          {/* ─── Cloud models (tier-gated) ─── */}
-          <CloudModelsSection tier={getCurrentTier(session)} />
-        </div>
+            <div className="settings-subnav-body">
+              {aiSection === 'local' && (
+                <section className="settings-section">
+                  <h2>Local models</h2>
+                  <p className="muted">
+                    Models run on this device with no internet. We use Ollama as the runtime.
+                  </p>
+
+                  {ollamaUp === false && (
+                    <div className="settings-callout warn">
+                      <Icon.Warning size={13} stroke="var(--ai)" />
+                      <div>
+                        <b>Ollama is not running.</b><br />
+                        Install from <a href="https://ollama.com/download" target="_blank" rel="noreferrer">ollama.com/download</a> and start it. Then come back and reload.
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="model-list">
+                    {discovered.map(d => (
+                      <ModelRow
+                        key={d.id}
+                        rowId={d.id}
+                        name={d.name}
+                        meta={[d.size, d.tag].filter(Boolean).join(' · ')}
+                        state="installed"
+                        selected={d.id === modelId}
+                        onSelect={() => onSelectModel(d.id)}
+                      />
+                    ))}
+                    {staticRows.map(s => {
+                      const pull$ = pulls[s.id];
+                      const state = pull$ ? 'pulling' : 'available';
+                      return (
+                        <ModelRow
+                          key={s.id}
+                          rowId={s.id}
+                          name={s.name}
+                          meta={[s.size, s.tag].filter(Boolean).join(' · ')}
+                          state={state}
+                          pullState={pull$}
+                          onInstall={() => pull(s.id)}
+                        />
+                      );
+                    })}
+                  </div>
+
+                  <p className="muted small">
+                    meo.md doesn't bundle Ollama. Models pulled here are stored in <code>~/.ollama/models/</code> and managed by Ollama itself.
+                  </p>
+                </section>
+              )}
+
+              {aiSection === 'cloud' && (
+                <CloudModelsSection tier={getCurrentTier(session)} />
+              )}
+
+              {aiSection === 'embeddings' && (
+                <section className="settings-section">
+                  <h2>Embeddings</h2>
+                  <p className="muted">
+                    Embeddings power Ask Meo's retrieval. They run locally on this device, never uploaded.
+                  </p>
+
+                  <div className="settings-row">
+                    <div>
+                      <div className="settings-row-label">Model</div>
+                      <div className="settings-row-value">{embedderId ?? <span className="muted">not loaded yet - open Ask Meo to load</span>}</div>
+                    </div>
+                  </div>
+
+                  <div className="settings-row">
+                    <div>
+                      <div className="settings-row-label">Embeds</div>
+                      <div className="settings-row-value">title + body + tags + folder</div>
+                    </div>
+                  </div>
+
+                  <div className="settings-row">
+                    <div style={{ flex: 1 }}>
+                      <div className="settings-row-label">Indexed</div>
+                      <div className="settings-row-value">
+                        {indexed
+                          ? `${indexed.done} / ${indexed.total} notes`
+                          : <span className="muted">not loaded yet</span>}
+                      </div>
+                      {indexed && indexed.total > 0 && (
+                        <div className="progress-bar">
+                          <div
+                            className="progress-fill"
+                            style={{ width: `${Math.min(100, (indexed.done / indexed.total) * 100)}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      className="btn"
+                      disabled={reindexing}
+                      onClick={forceReindex}
+                      title="Drop all embeddings and re-embed every note"
+                    >
+                      {reindexing ? 'Re-indexing…' : 'Force re-index'}
+                    </button>
+                  </div>
+                </section>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </div>

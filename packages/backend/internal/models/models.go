@@ -25,18 +25,32 @@ import (
 )
 
 // ManifestEntry mirrors the JSON shape on disk. download_url is left
-// as "" in the file and filled in dynamically by the HTTP layer (it's
-// a self-referential URL that depends on the listening base URL).
+// as null in the file and filled in dynamically by the HTTP layer
+// for kinds that have a downloadable file (a self-referential URL
+// against the listening base URL).
+//
+// Kind taxonomy:
+//
+//	"local-llm"  - GGUF/quantized chat model. Has download_url + size.
+//	"cloud-llm"  - frontier model accessed via vendor's HTTP API. No
+//	               download; client supplies BYO API key. `vendor`
+//	               populated.
+//	"embedder"   - small ONNX model for vector retrieval. Has
+//	               download_url; runs in-browser via transformers.js
+//	               on desktop.
 type ManifestEntry struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
+	Kind        string   `json:"kind"` // local-llm | cloud-llm | embedder
 	Family      string   `json:"family"`
+	Vendor      string   `json:"vendor,omitempty"` // cloud-llm only: OpenAI / Anthropic / Google / xAI
 	Params      string   `json:"params"`
-	Quant       string   `json:"quant"`
+	Quant       *string  `json:"quant"`
 	SizeBytes   int64    `json:"size_bytes"`
 	SHA256      *string  `json:"sha256"`
 	DownloadURL *string  `json:"download_url"`
 	DefaultFor  []string `json:"default_for"`
+	Tag         string   `json:"tag,omitempty"` // short UI label e.g. "Fast, on-device"
 }
 
 //go:embed manifest.json

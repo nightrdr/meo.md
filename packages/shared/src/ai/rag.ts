@@ -7,6 +7,7 @@ import type {
 import type { Note } from '../types.js';
 import type { Bm25Index } from './bm25.js';
 import { hybridRetrieve } from './retrieval.js';
+import { NOTE_TOOLS_SYSTEM_PROMPT } from './note-tools.js';
 
 export type RagMode = 'ask' | 'chat';
 
@@ -21,6 +22,13 @@ export interface RagAskArgs {
   generator: Generator;
   modelId: string;
   signal?: AbortSignal;
+  /**
+   * If true (chat mode only), append the note-mutation tool prompt
+   * so the model can propose CRUD via the meo-actions JSON fence.
+   * Defaults to true when mode === 'chat'. Pass false to opt-out
+   * (e.g. for kiosks that should be strictly read-only).
+   */
+  enableNoteTools?: boolean;
 }
 
 export interface RagAskResult {
@@ -51,8 +59,16 @@ export async function ragAsk(args: RagAskArgs): Promise<RagAskResult> {
     options: { k: 8 },
   });
 
+  // Chat mode opts into note-mutation tools by default. The system
+  // prompt explains the JSON-fence convention; the user always sees a
+  // confirmation chip before any mutation lands.
+  const enableTools = args.enableNoteTools ?? (args.mode === 'chat');
+
+  const sysPrompt = args.mode === 'ask' ? SYSTEM_PROMPT_ASK : SYSTEM_PROMPT_CHAT;
+  const finalSys = enableTools ? `${sysPrompt}\n\n${NOTE_TOOLS_SYSTEM_PROMPT}` : sysPrompt;
+
   const messages: ChatMessage[] = [
-    { role: 'system', content: args.mode === 'ask' ? SYSTEM_PROMPT_ASK : SYSTEM_PROMPT_CHAT },
+    { role: 'system', content: finalSys },
   ];
   if (args.mode === 'chat' && args.history) {
     messages.push(...args.history);

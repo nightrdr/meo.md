@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { isVaultLockedBody, type Note } from '@meo/shared';
+import { isVaultLockedBody, ai as A, type Note } from '@meo/shared';
 import { AuthScreen } from './Auth';
 import { Onboarding } from './Onboarding';
 import { Editor } from './Editor';
@@ -17,7 +17,7 @@ import { clearWrapKey, jwtExpMs } from './biometric';
 import { MeoMark, Icon } from './Icon';
 import { ContextMenu, type MenuEntry } from './ContextMenu';
 import { SearchOverlay } from './SearchOverlay';
-import { AIControls, MODELS } from './AIControls';
+import { AIControls, FALLBACK_DEFAULT_MODEL_ID, type DynamicModel } from './AIControls';
 import { AIPanel } from './AIPanel';
 import { Settings, type SettingsTab } from './Settings';
 import { Pairing } from './Pairing';
@@ -95,8 +95,8 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tagAddInput]);
   const [aiOn, setAiOn] = useState(true);
-  const [modelId, setModelId] = useState<string>(MODELS[0].id);
-  const [dynamicModels, setDynamicModels] = useState<typeof MODELS>([]);
+  const [modelId, setModelId] = useState<string>(FALLBACK_DEFAULT_MODEL_ID);
+  const [dynamicModels, setDynamicModels] = useState<DynamicModel[]>([]);
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('ai');
@@ -282,7 +282,7 @@ export default function App() {
     setEmptyFolders(meta.empty_folders ?? []);
     setExpandedFolders(new Set(meta.expanded_folders ?? []));
     setAiOn(meta.ai_on ?? true);
-    setModelId(meta.model_id ?? MODELS[0].id);
+    setModelId(meta.model_id ?? FALLBACK_DEFAULT_MODEL_ID);
     setSidebarHidden(meta.sidebar_hidden ?? false);
     setOnboardingPending(meta.onboarding_done !== true);
     setSession(s);
@@ -698,11 +698,14 @@ export default function App() {
         }
         const list = await backend.listModels();
         if (!alive) return;
-        setDynamicModels(list as any);
-        // If the currently-selected model id isn't in the list AND
-        // there's at least one Ollama model, auto-select the first one.
-        if (list.length > 0 && !list.some(l => l.id === modelId) &&
-            !MODELS.some(s => s.id === modelId && s.kind === 'commercial')) {
+        setDynamicModels(list as DynamicModel[]);
+        // If the currently-selected model id isn't in the Ollama list,
+        // auto-select the first one. Cloud-LLM ids (gpt-4o, claude-...,
+        // gemini-..., grok-...) intentionally stay sticky — we don't
+        // want a transient Ollama probe to kick a user off their
+        // chosen frontier model.
+        const isCloudId = /^(gpt|claude|gemini|grok)/i.test(modelId);
+        if (list.length > 0 && !list.some(l => l.id === modelId) && !isCloudId) {
           setModelId(list[0].id);
         }
       } catch {
@@ -1098,6 +1101,33 @@ export default function App() {
           modelId={modelId}
           onClose={() => setAiPanelOpen(false)}
           onOpenNote={(id) => { setSelectedId(id); }}
+          applyToolCall={async (call) => {
+            // Funnel AI-proposed CRUD through the same session-bound
+            // helpers a manual edit would use, so encryption + sync +
+            // HLC bookkeeping all happen exactly once. The user has
+            // already clicked Apply on the chip by the time we get here.
+            const res = await A.applyNoteToolCall(call, {
+              notes: session.notes,
+              newDraft,
+              saveNote: async (n) => {
+                const saved = await saveNote(session, n);
+                session.notes.set(saved.id, saved);
+                return saved;
+              },
+              deleteNote: async (id) => {
+                await deleteNote(session, id);
+                session.notes.delete(id);
+              },
+            });
+            // Force a re-render so the sidebar / editor reflect the
+            // mutation. setSession would re-trigger derived state but
+            // we don't actually have a "session is new" event yet, so
+            // bump selectedId to the affected note (or null on delete).
+            if (res.ok && res.resultId && call.type !== 'delete') {
+              setSelectedId(res.resultId);
+            }
+            return res;
+          }}
         />
       )}
 

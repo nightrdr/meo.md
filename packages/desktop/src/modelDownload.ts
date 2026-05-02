@@ -13,16 +13,27 @@
 import { apiBaseUrl } from './session';
 import { getModelFile, putModelFile, type CachedModelFile } from './storage';
 
+/** Mirrors backend/internal/models/ManifestEntry. */
+export type ModelKind = 'local-llm' | 'cloud-llm' | 'embedder';
+
 export interface ManifestEntry {
   id: string;
   name: string;
+  /** local-llm = downloadable GGUF; cloud-llm = BYO API key; embedder = downloadable ONNX */
+  kind: ModelKind;
   family: string;
+  /** cloud-llm only: OpenAI / Anthropic / Google / xAI */
+  vendor?: string;
   params: string;
-  quant: string;
+  /** null for cloud-llm */
+  quant: string | null;
   size_bytes: number;
   sha256: string | null;
-  download_url: string | null;   // absolute URL filled in by the server
+  /** absolute URL filled in by the server. null for cloud-llm. */
+  download_url: string | null;
   default_for: ('mobile' | 'desktop')[];
+  /** short UI label e.g. "Fast, on-device" */
+  tag?: string;
 }
 
 export interface DownloadProgress {

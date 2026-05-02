@@ -3,11 +3,27 @@ import { ai as A, type Note } from '@meo/shared';
 import { Icon } from './Icon';
 import { getAIRuntime } from './aiStore';
 
+/** State machine for a proposed mutation chip. */
+type ToolCallState =
+  | { status: 'proposed' }
+  | { status: 'applying' }
+  | { status: 'applied'; resultNoteId: string | null }
+  | { status: 'rejected' }
+  | { status: 'failed'; error: string };
+
+interface ToolCallEntry {
+  call: A.NoteToolCall;
+  state: ToolCallState;
+}
+
 interface Message {
   role: 'user' | 'assistant';
   text: string;
   context?: A.RetrievedChunk[];      // assistant-only
   pending?: boolean;
+  /** Parsed CRUD actions extracted from the assistant message after
+   *  streaming completes. Empty array == no proposed mutations. */
+  toolCalls?: ToolCallEntry[];
 }
 
 type Mode = 'ask' | 'chat';
@@ -17,6 +33,12 @@ interface Props {
   modelId: string;
   onClose: () => void;
   onOpenNote: (id: string) => void;
+  /**
+   * CRUD callbacks for executing confirmed mutations. Wiring lives
+   * in App.tsx so the AI panel never touches encryption / sync state
+   * directly.
+   */
+  applyToolCall: (call: A.NoteToolCall) => Promise<{ ok: true; resultId: string | null } | { ok: false; error: string }>;
 }
 
 const SUGGESTED = [
@@ -26,7 +48,7 @@ const SUGGESTED = [
   { icon: 'Quote' as const, label: 'Reflect on this week', q: 'What have I been writing about this week?' },
 ];
 
-export function AIPanel({ notes, modelId, onClose, onOpenNote }: Props) {
+export function AIPanel({ notes, modelId, onClose, onOpenNote, applyToolCall }: Props) {
   const [mode, setMode] = useState<Mode>('ask');
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -118,8 +140,17 @@ export function AIPanel({ notes, modelId, onClose, onOpenNote }: Props) {
           ));
         }
       }
+      // Streaming finished. Parse any meo-actions JSON fence the
+      // assistant emitted so the user can confirm/reject each
+      // proposed CRUD before we apply it. The "clean" text replaces
+      // the raw stream so the JSON block doesn't leak into the UI.
+      const knownIds = new Set<string>(result.context.map(c => c.noteId));
+      const { clean, actions } = A.parseNoteToolCalls(acc, knownIds);
+      const toolCalls: ToolCallEntry[] = actions.map(call => ({ call, state: { status: 'proposed' } }));
       setMessages(prev => prev.map((m, i) =>
-        i === prev.length - 1 ? { ...m, pending: false } : m,
+        i === prev.length - 1
+          ? { ...m, text: clean, pending: false, toolCalls }
+          : m,
       ));
     } catch (e) {
       const err = (e as Error).message;
@@ -141,6 +172,42 @@ export function AIPanel({ notes, modelId, onClose, onOpenNote }: Props) {
   const stop = useCallback(() => {
     abortRef.current?.abort();
   }, []);
+
+  /**
+   * Apply or reject one of the proposed mutations on a given message.
+   * `messageIdx` + `callIdx` together identify the chip; we mutate the
+   * `toolCalls[callIdx].state` of that message in place.
+   */
+  const decideToolCall = useCallback(async (
+    messageIdx: number, callIdx: number, accept: boolean,
+  ) => {
+    // Snap the entry into 'applying' (or straight to 'rejected') so the
+    // UI disables both buttons immediately.
+    let toApply: A.NoteToolCall | null = null;
+    setMessages(prev => prev.map((m, i) => {
+      if (i !== messageIdx || !m.toolCalls) return m;
+      const next = m.toolCalls.map((tc, j): ToolCallEntry => {
+        if (j !== callIdx) return tc;
+        if (!accept) return { ...tc, state: { status: 'rejected' } };
+        toApply = tc.call;
+        return { ...tc, state: { status: 'applying' } };
+      });
+      return { ...m, toolCalls: next };
+    }));
+    if (!accept || !toApply) return;
+    const result = await applyToolCall(toApply);
+    setMessages(prev => prev.map((m, i) => {
+      if (i !== messageIdx || !m.toolCalls) return m;
+      const next = m.toolCalls.map((tc, j): ToolCallEntry => {
+        if (j !== callIdx) return tc;
+        if (result.ok) {
+          return { ...tc, state: { status: 'applied', resultNoteId: result.resultId } };
+        }
+        return { ...tc, state: { status: 'failed', error: result.error } };
+      });
+      return { ...m, toolCalls: next };
+    }));
+  }, [applyToolCall]);
 
   // ─── Render ───
   return (
@@ -216,7 +283,13 @@ export function AIPanel({ notes, modelId, onClose, onOpenNote }: Props) {
               <div className="ai-section-h">Conversation</div>
             )}
             {messages.map((m, i) => (
-              <MessageView key={i} m={m} onOpenNote={onOpenNote} />
+              <MessageView
+                key={i}
+                m={m}
+                notes={notes}
+                onOpenNote={onOpenNote}
+                onDecideToolCall={(callIdx, accept) => decideToolCall(i, callIdx, accept)}
+              />
             ))}
           </div>
         )}
@@ -256,7 +329,14 @@ export function AIPanel({ notes, modelId, onClose, onOpenNote }: Props) {
 
 // ─── Sub-components ───
 
-function MessageView({ m, onOpenNote }: { m: Message; onOpenNote: (id: string) => void }) {
+function MessageView({
+  m, notes, onOpenNote, onDecideToolCall,
+}: {
+  m: Message;
+  notes: Map<string, Note>;
+  onOpenNote: (id: string) => void;
+  onDecideToolCall: (callIdx: number, accept: boolean) => void;
+}) {
   if (m.role === 'user') {
     return <div className="ai-msg-user">{m.text}</div>;
   }
@@ -264,7 +344,7 @@ function MessageView({ m, onOpenNote }: { m: Message; onOpenNote: (id: string) =
   const { clean, ids } = A.extractCitations(m.text);
   return (
     <div className="ai-msg-asst">
-      {m.context && m.context.length > 0 && m.text === '' && !m.pending && (
+      {m.context && m.context.length > 0 && m.text === '' && !m.pending && (!m.toolCalls || m.toolCalls.length === 0) && (
         <div className="ai-no-context">No relevant notes found. Try rephrasing.</div>
       )}
       {m.context && m.context.length > 0 && (
@@ -298,6 +378,80 @@ function MessageView({ m, onOpenNote }: { m: Message; onOpenNote: (id: string) =
               onClick={() => onOpenNote(id)}
             >[{i + 1}] open source</button>
           ))}
+        </div>
+      )}
+      {m.toolCalls && m.toolCalls.length > 0 && (
+        <div className="ai-tool-calls">
+          {m.toolCalls.map((tc, j) => (
+            <ToolCallChip
+              key={j}
+              entry={tc}
+              notes={notes}
+              onAccept={() => onDecideToolCall(j, true)}
+              onReject={() => onDecideToolCall(j, false)}
+              onOpenNote={onOpenNote}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A single proposed-mutation chip with Accept / Skip buttons. After
+ *  the user decides, the chip flips to a status pill (applied / failed
+ *  / rejected) and the action buttons disappear. */
+function ToolCallChip({
+  entry, notes, onAccept, onReject, onOpenNote,
+}: {
+  entry: ToolCallEntry;
+  notes: Map<string, Note>;
+  onAccept: () => void;
+  onReject: () => void;
+  onOpenNote: (id: string) => void;
+}) {
+  const { call, state } = entry;
+  const kindClass = `kind-${call.type}`;
+  const summary = A.describeNoteToolCall(call, notes);
+  const kindLabel = call.type === 'create' ? 'Create' : call.type === 'update' ? 'Update' : 'Delete';
+
+  return (
+    <div className={`ai-tool-chip ${kindClass} ${state.status}`}>
+      <div className="ai-tool-row">
+        <span className="ai-tool-kind">{kindLabel}</span>
+        <span className="ai-tool-summary">{summary}</span>
+      </div>
+      {state.status === 'proposed' && (
+        <div className="ai-tool-actions">
+          <button type="button" className="ai-tool-action accept" onClick={onAccept}>
+            <Icon.Check size={11} /> Apply
+          </button>
+          <button type="button" className="ai-tool-action reject" onClick={onReject}>
+            <Icon.X size={11} /> Skip
+          </button>
+        </div>
+      )}
+      {state.status === 'applying' && (
+        <div className="ai-tool-status">Applying...</div>
+      )}
+      {state.status === 'applied' && (
+        <div className="ai-tool-status applied">
+          <Icon.Check size={11} /> Applied
+          {state.resultNoteId && call.type !== 'delete' && (
+            <button
+              type="button"
+              className="ai-tool-action open"
+              onClick={() => onOpenNote(state.resultNoteId!)}
+            >Open</button>
+          )}
+        </div>
+      )}
+      {state.status === 'rejected' && (
+        <div className="ai-tool-status rejected">Skipped</div>
+      )}
+      {state.status === 'failed' && (
+        <div className="ai-tool-status failed" title={state.error}>
+          Failed: {state.error}
         </div>
       )}
     </div>

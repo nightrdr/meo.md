@@ -1691,6 +1691,67 @@ button, input, textarea, select { font: inherit; color: inherit; }
   font-weight: 600;
 }
 
+/* AI tab uses a 2-column layout: a left sub-nav listing
+   Local / Cloud / Embeddings, and a right pane that renders only the
+   active section. The body normally has uniform padding; with the
+   sub-nav variant we split into 160px (nav) + 1fr (body) and let the
+   nav grow vertically without scrolling. */
+.settings-body.settings-body-with-subnav {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 0;
+  padding: 0;
+  min-height: 380px;
+}
+.settings-subnav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 8px 14px 14px;
+  border-right: 1px solid var(--paper-edge);
+  background: rgba(31, 28, 23, 0.02);
+}
+.settings-subnav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink2);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.settings-subnav-item:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.settings-subnav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.settings-subnav-item .model-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.settings-subnav-body {
+  padding: 14px 18px 18px;
+  overflow: auto;
+}
+.settings-subnav-body .settings-section {
+  /* Sections inside the sub-nav body don't need their own top margin
+     (the nav body already provides padding). */
+  margin-top: 0;
+}
+
 /* Subscription pane: side-by-side tier cards for the upgrade options. */
 .upgrade-tiers {
   display: grid;
@@ -1934,6 +1995,74 @@ button, input, textarea, select { font: inherit; color: inherit; }
   cursor: pointer;
 }
 .ai-citation:hover { color: var(--accent); }
+
+/* Proposed-mutation chips (Ask Meo can create/update/delete notes via
+ * a JSON fence; the user clicks Apply / Skip on each one). */
+.ai-tool-calls {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: 8px;
+}
+.ai-tool-chip {
+  border: 1px solid var(--paper-edge);
+  border-left-width: 3px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--paper);
+  font-size: 12px;
+}
+.ai-tool-chip.kind-create  { border-left-color: var(--accent, #7a8c2a); }
+.ai-tool-chip.kind-update  { border-left-color: var(--ai, #b48a2e); }
+.ai-tool-chip.kind-delete  { border-left-color: #b34141; }
+.ai-tool-chip.applied      { opacity: 0.75; }
+.ai-tool-chip.rejected     { opacity: 0.55; }
+.ai-tool-chip.failed       { background: rgba(179, 65, 65, 0.06); }
+.ai-tool-row {
+  display: flex; align-items: baseline; gap: 8px;
+}
+.ai-tool-kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink3);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.ai-tool-summary {
+  color: var(--ink1);
+  word-break: break-word;
+}
+.ai-tool-actions {
+  display: flex; gap: 6px;
+  margin-top: 6px;
+}
+.ai-tool-action {
+  display: inline-flex; align-items: center; gap: 3px;
+  border: 1px solid var(--paper-edge);
+  background: transparent;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font: inherit; font-size: 11px;
+  color: var(--ink2);
+  cursor: pointer;
+}
+.ai-tool-action:hover { background: var(--paper-edge); }
+.ai-tool-action.accept {
+  background: var(--accent, #7a8c2a);
+  border-color: var(--accent, #7a8c2a);
+  color: #fff;
+}
+.ai-tool-action.accept:hover { filter: brightness(1.05); }
+.ai-tool-action.reject { color: var(--ink3); }
+.ai-tool-action.open { margin-left: 6px; }
+.ai-tool-status {
+  display: inline-flex; align-items: center; gap: 4px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--ink3);
+}
+.ai-tool-status.applied  { color: var(--accent, #7a8c2a); }
+.ai-tool-status.rejected { color: var(--ink3); }
+.ai-tool-status.failed   { color: #b34141; }
 
 .ai-panel-input-row {
   padding: 10px 14px;

@@ -31,6 +31,11 @@ func (s *Server) listModelManifest(c *gin.Context) {
 	}
 	base := fmt.Sprintf("%s://%s", scheme, c.Request.Host)
 	for i := range entries {
+		// cloud-llm entries don't have a downloadable file; the client
+		// references them by id + vendor and supplies its own API key.
+		if entries[i].Kind == "cloud-llm" {
+			continue
+		}
 		u := fmt.Sprintf("%s/models/%s/file", base, entries[i].ID)
 		entries[i].DownloadURL = &u
 	}

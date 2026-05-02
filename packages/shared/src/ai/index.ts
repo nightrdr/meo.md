@@ -5,4 +5,5 @@ export * from './bm25.js';
 export * from './vectorStore.js';
 export * from './retrieval.js';
 export * from './rag.js';
+export * from './note-tools.js';
 export { OllamaBackend } from './backends/ollama.js';

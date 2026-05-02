@@ -2,56 +2,122 @@
   {
     "id": "qwen2.5-1.5b-q4",
     "name": "Qwen 2.5 1.5B",
+    "kind": "local-llm",
     "family": "qwen",
     "params": "1.5B",
     "quant": "Q4_K_M",
     "size_bytes": 985000000,
     "sha256": null,
     "download_url": null,
-    "default_for": ["mobile", "desktop"]
+    "default_for": ["mobile", "desktop"],
+    "tag": "Fast, on-device"
   },
   {
     "id": "qwen2.5-7b-q4",
     "name": "Qwen 2.5 7B",
+    "kind": "local-llm",
     "family": "qwen",
     "params": "7B",
     "quant": "Q4_K_M",
     "size_bytes": 4400000000,
     "sha256": null,
     "download_url": null,
-    "default_for": ["desktop"]
+    "default_for": ["desktop"],
+    "tag": "Long context"
   },
   {
     "id": "llama3.1-8b-q4",
     "name": "Llama 3.1 8B",
+    "kind": "local-llm",
     "family": "llama",
     "params": "8B",
     "quant": "Q4_K_M",
     "size_bytes": 4700000000,
     "sha256": null,
     "download_url": null,
-    "default_for": ["desktop"]
+    "default_for": ["desktop"],
+    "tag": "Balanced"
   },
   {
     "id": "phi3.5-mini-q4",
     "name": "Phi-3.5 Mini",
+    "kind": "local-llm",
     "family": "phi",
     "params": "3.8B",
     "quant": "Q4_K_M",
     "size_bytes": 2300000000,
     "sha256": null,
     "download_url": null,
-    "default_for": ["desktop"]
+    "default_for": ["desktop"],
+    "tag": "Lightweight"
   },
   {
     "id": "bge-small-en-v1.5",
     "name": "bge-small-en-v1.5",
+    "kind": "embedder",
     "family": "embedder",
     "params": "33M",
     "quant": "Q4",
     "size_bytes": 33000000,
     "sha256": null,
     "download_url": null,
-    "default_for": ["mobile", "desktop"]
+    "default_for": ["mobile", "desktop"],
+    "tag": "Hybrid retrieval"
+  },
+  {
+    "id": "gpt-4o",
+    "name": "GPT-4o",
+    "kind": "cloud-llm",
+    "family": "openai",
+    "vendor": "OpenAI",
+    "params": "frontier",
+    "quant": null,
+    "size_bytes": 0,
+    "sha256": null,
+    "download_url": null,
+    "default_for": [],
+    "tag": "Frontier"
+  },
+  {
+    "id": "claude-sonnet-4.5",
+    "name": "Claude Sonnet 4.5",
+    "kind": "cloud-llm",
+    "family": "anthropic",
+    "vendor": "Anthropic",
+    "params": "frontier",
+    "quant": null,
+    "size_bytes": 0,
+    "sha256": null,
+    "download_url": null,
+    "default_for": [],
+    "tag": "Frontier"
+  },
+  {
+    "id": "gemini-2.5-pro",
+    "name": "Gemini 2.5 Pro",
+    "kind": "cloud-llm",
+    "family": "google",
+    "vendor": "Google",
+    "params": "frontier",
+    "quant": null,
+    "size_bytes": 0,
+    "sha256": null,
+    "download_url": null,
+    "default_for": [],
+    "tag": "Frontier"
+  },
+  {
+    "id": "grok-4",
+    "name": "Grok 4",
+    "kind": "cloud-llm",
+    "family": "xai",
+    "vendor": "xAI",
+    "params": "frontier",
+    "quant": null,
+    "size_bytes": 0,
+    "sha256": null,
+    "download_url": null,
+    "default_for": [],
+    "tag": "Frontier"
   }
 ]

@@ -1,34 +1,50 @@
+// AI controls in the sidebar: on/off switch + model picker dropdown.
+//
+// The picker is driven entirely by the model service manifest
+// (GET /models/manifest from the Go backend) — no hardcoded list.
+// The manifest returns three kinds of entries:
+//
+//   - local-llm  → green dot, runs on-device via Ollama / llama.cpp
+//   - cloud-llm  → red dot, frontier vendor APIs (OpenAI / Anthropic /
+//                  Google / xAI). Uses BYO API keys per the tier policy.
+//   - embedder   → not shown in the picker (the embedder is configured
+//                  in Settings → AI → Embeddings, not chosen per query).
+//
+// We also merge in *runtime-discovered* models from Ollama's /api/tags
+// (passed in as `dynamicModels`) so locally-pulled models that aren't
+// in the manifest still show up. Manifest entry beats dynamic on id
+// collision because the manifest's display name + tag are nicer.
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Icon } from './Icon';
+import { fetchManifest, type ManifestEntry } from './modelDownload';
 
-// Mirrors design-mocks/components/ai-controls.jsx - the model catalogue is
-// UI-only for now. Selecting a model persists to localStorage; actual local
-// LLM inference is deferred (per spec §3.6).
+// UI-side narrowed enum. The manifest uses `local-llm | cloud-llm |
+// embedder`; the picker only ever shows the first two, mapped to:
+type UIKind = 'local' | 'commercial';
 
 export interface Model {
   id: string;
   name: string;
   size?: string;
   vendor?: string;
-  kind: 'local' | 'commercial';
+  kind: UIKind;
   tag: string;
   installed?: boolean;
   default?: boolean;
 }
 
-export const MODELS: Model[] = [
-  // local - green
-  { id: 'meo-mini',     name: 'Meo Mini',          size: '1.1 GB', kind: 'local',      tag: 'Fast, on-device',  installed: true,  default: true },
-  { id: 'llama-3.1-8b', name: 'Llama 3.1 8B',      size: '4.7 GB', kind: 'local',      tag: 'Balanced',         installed: true },
-  { id: 'qwen-2.5-7b',  name: 'Qwen 2.5 7B',       size: '4.4 GB', kind: 'local',      tag: 'Long context',     installed: true },
-  { id: 'mistral-7b',   name: 'Mistral 7B',        size: '4.1 GB', kind: 'local',      tag: 'Reasoning',        installed: false },
-  { id: 'phi-3.5-mini', name: 'Phi-3.5 Mini',      size: '2.3 GB', kind: 'local',      tag: 'Lightweight',      installed: false },
-  { id: 'gemma-2-9b',   name: 'Gemma 2 9B',        size: '5.4 GB', kind: 'local',      tag: 'High quality',     installed: false },
-  // commercial - red
-  { id: 'gpt-4o',        name: 'GPT-4o',             vendor: 'OpenAI',    kind: 'commercial', tag: 'Frontier' },
-  { id: 'claude-sonnet', name: 'Claude Sonnet 4.5',  vendor: 'Anthropic', kind: 'commercial', tag: 'Frontier' },
-  { id: 'gemini-pro',    name: 'Gemini 2.5 Pro',     vendor: 'Google',    kind: 'commercial', tag: 'Frontier' },
-];
+/**
+ * The picker's first-paint default while the manifest is fetching.
+ * Empty list means "show a small loading state in the dropdown."
+ * Once the manifest resolves we replace this entirely.
+ */
+export const FALLBACK_DEFAULT_MODEL_ID = 'qwen2.5-1.5b-q4';
+
+// Re-exported so App.tsx can use it as the initial value for `modelId`
+// state without crashing on first render. Replaced by manifest-driven
+// data once `useManifestModels` returns.
+export const MODELS: readonly Model[] = [];
 
 export const KIND_C = {
   local:      { fg: '#3F5A2C', bg: '#E1EBD2', dot: '#4F6B3A', label: 'Local' },
@@ -36,22 +52,23 @@ export const KIND_C = {
 } as const;
 
 /**
- * Loose shape for runtime-discovered models. The shared AI registry uses
- * a richer enum ('local-gguf' | 'system-os' | 'cloud'); we normalize
- * those to this file's narrower 'local' | 'commercial' before render.
+ * Loose shape for runtime-discovered models. The shared AI registry
+ * uses a richer enum ('local-gguf' | 'system-os' | 'cloud'); we
+ * normalize to this file's narrower 'local' | 'commercial' for render.
  */
 export interface DynamicModel {
   id: string;
   name: string;
-  kind: string;          // 'local-gguf' | 'system-os' | 'cloud' from shared
+  kind: string;
   tag: string;
   size?: string;
   vendor?: string;
 }
 
-function normalizeModel(m: DynamicModel | Model): Model {
-  if ((m.kind as any) === 'local' || (m.kind as any) === 'commercial') return m as Model;
-  // Map shared/AI enum to local UI enum
+function normalizeDynamic(m: DynamicModel): Model {
+  if ((m.kind as any) === 'local' || (m.kind as any) === 'commercial') {
+    return m as unknown as Model;
+  }
   const isCloud = m.kind === 'cloud';
   return {
     id: m.id,
@@ -59,9 +76,78 @@ function normalizeModel(m: DynamicModel | Model): Model {
     kind: isCloud ? 'commercial' : 'local',
     tag: m.tag,
     size: m.size,
-    vendor: (m as any).vendor,
-    installed: !isCloud,           // dynamically discovered ⇒ already installed
+    vendor: m.vendor,
+    installed: !isCloud,
   };
+}
+
+function manifestToModel(e: ManifestEntry): Model {
+  if (e.kind === 'cloud-llm') {
+    return {
+      id: e.id,
+      name: e.name,
+      kind: 'commercial',
+      tag: e.tag ?? 'Frontier',
+      vendor: e.vendor,
+    };
+  }
+  return {
+    id: e.id,
+    name: e.name,
+    kind: 'local',
+    tag: e.tag ?? '',
+    size: e.size_bytes ? humanBytes(e.size_bytes) : undefined,
+    installed: false,         // installed status comes from runtime probes
+    default: e.default_for.includes('desktop') && e.id === FALLBACK_DEFAULT_MODEL_ID,
+  };
+}
+
+function humanBytes(n: number): string {
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(0)} MB`;
+  return `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
+}
+
+/**
+ * Live-load the manifest from the model service. Returns:
+ *   - models: the list (or empty until first fetch resolves)
+ *   - loading: true on first paint
+ *   - error: non-null if fetch failed (offline, backend down)
+ *
+ * We deliberately don't retry — a one-shot is enough; the UI shows a
+ * static fallback list (just the default Ollama models we know we
+ * pull) when the backend is unreachable.
+ */
+export function useManifestModels(): {
+  models: Model[];
+  loading: boolean;
+  error: string | null;
+} {
+  const [models, setModels] = useState<Model[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetchManifest()
+      .then(entries => {
+        if (!alive) return;
+        // The picker only shows local-llm + cloud-llm. Embedders are
+        // configured separately under Settings → AI → Embeddings.
+        const picker = entries
+          .filter(e => e.kind === 'local-llm' || e.kind === 'cloud-llm')
+          .map(manifestToModel);
+        setModels(picker);
+        setLoading(false);
+      })
+      .catch(e => {
+        if (!alive) return;
+        setError((e as Error).message);
+        setLoading(false);
+      });
+    return () => { alive = false; };
+  }, []);
+
+  return { models, loading, error };
 }
 
 interface Props {
@@ -69,7 +155,7 @@ interface Props {
   modelId: string;
   /**
    * Models discovered at runtime (e.g. via Ollama's /api/tags). Merged
-   * into the local section of the dropdown ahead of the static catalogue.
+   * into the local section of the dropdown ahead of the manifest list.
    */
   dynamicModels?: DynamicModel[];
   onToggle: () => void;
@@ -79,6 +165,7 @@ interface Props {
 export function AIControls({ aiOn, modelId, dynamicModels = [], onToggle, onSelect }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const { models: manifestModels, loading } = useManifestModels();
 
   useEffect(() => {
     if (!open) return;
@@ -95,14 +182,18 @@ export function AIControls({ aiOn, modelId, dynamicModels = [], onToggle, onSele
     };
   }, [open]);
 
-  // Merge dynamic + static for the selector. Dynamic-installed entries
-  // win when ids overlap. Both must be normalized to the local enum.
-  const dynNorm = dynamicModels.map(normalizeModel);
+  // Merge dynamic + manifest. Dynamic-discovered installed entries
+  // (Ollama-pulled) win on id collision because they signal "actually
+  // available right now", but for unknown-to-Ollama manifest entries
+  // we still show the manifest version (download path).
+  const dynNorm = dynamicModels.map(normalizeDynamic);
   const allModels: Model[] = [
     ...dynNorm,
-    ...MODELS.filter(s => !dynNorm.some(d => d.id === s.id)),
+    ...manifestModels.filter(m => !dynNorm.some(d => d.id === m.id)),
   ];
-  const m = allModels.find(x => x.id === modelId) ?? allModels[0];
+  const m = allModels.find(x => x.id === modelId)
+    ?? allModels[0]
+    ?? { id: '', name: loading ? 'Loading models…' : 'No models', kind: 'local' as UIKind, tag: '' };
   const kc = KIND_C[m.kind] ?? KIND_C.local;
 
   return (
@@ -132,8 +223,7 @@ export function AIControls({ aiOn, modelId, dynamicModels = [], onToggle, onSele
           <span className="model-name">{m.name}</span>
           <span className="model-meta">
             <span style={{ color: kc.fg, fontWeight: 600 }}>{kc.label}</span>
-            <span> · </span>
-            <span>{m.tag}</span>
+            {m.tag && <span> · {m.tag}</span>}
           </span>
         </span>
         <Icon.ChevronD size={12} stroke="var(--ink3)" />
@@ -142,7 +232,8 @@ export function AIControls({ aiOn, modelId, dynamicModels = [], onToggle, onSele
       {aiOn && open && (
         <ModelDropdown
           modelId={modelId}
-          dynamicModels={dynamicModels}
+          allModels={allModels}
+          loading={loading}
           onSelect={(id) => { onSelect(id); setOpen(false); }}
         />
       )}
@@ -151,15 +242,15 @@ export function AIControls({ aiOn, modelId, dynamicModels = [], onToggle, onSele
 }
 
 function ModelDropdown({
-  modelId, dynamicModels, onSelect,
-}: { modelId: string; dynamicModels: DynamicModel[]; onSelect: (id: string) => void }) {
-  const dynNorm = dynamicModels.map(normalizeModel);
-  // Local section: dynamically discovered first, then statically known
-  // local models that aren't already in the dynamic list.
-  const dynLocal = dynNorm.filter(m => m.kind === 'local');
-  const staticLocal = MODELS.filter(m => m.kind === 'local' && m.installed && !dynLocal.some(d => d.id === m.id));
-  const local = [...dynLocal, ...staticLocal];
-  const commercial = MODELS.filter(m => m.kind === 'commercial');
+  modelId, allModels, loading, onSelect,
+}: {
+  modelId: string;
+  allModels: Model[];
+  loading: boolean;
+  onSelect: (id: string) => void;
+}) {
+  const local = allModels.filter(m => m.kind === 'local');
+  const commercial = allModels.filter(m => m.kind === 'commercial');
 
   return (
     <div className="model-dropdown">
@@ -167,14 +258,15 @@ function ModelDropdown({
         <span className="model-dot" style={{ background: KIND_C.local.dot, width: 8, height: 8 }} />
         <span style={{ color: KIND_C.local.fg }}>Local, runs on this device</span>
       </div>
+      {loading && local.length === 0 && (
+        <div className="model-row-loading">Loading models…</div>
+      )}
+      {!loading && local.length === 0 && (
+        <div className="model-row-loading">No local models available.</div>
+      )}
       {local.map(m => (
         <ModelRow key={m.id} m={m} selected={m.id === modelId} onClick={() => onSelect(m.id)} />
       ))}
-
-      <button className="model-download-more" type="button">
-        <Icon.Plus size={11} stroke={KIND_C.local.fg} />
-        <span>Download more local models</span>
-      </button>
 
       <div className="model-section-header" style={{ borderTop: '1px solid var(--paper-edge)', marginTop: 6, paddingTop: 12 }}>
         <span className="model-dot" style={{ background: KIND_C.commercial.dot, width: 8, height: 8 }} />
@@ -203,10 +295,9 @@ function ModelRow({ m, selected, onClick }: { m: Model; selected: boolean; onCli
         </div>
         <div className="model-row-meta">
           <span style={{ color: kc.fg, fontWeight: 600 }}>
-            {m.kind === 'local' ? `Local · ${m.size}` : `${m.vendor} · shares data`}
+            {m.kind === 'local' ? (m.size ? `Local · ${m.size}` : 'Local') : `${m.vendor ?? 'Cloud'} · shares data`}
           </span>
-          <span>·</span>
-          <span>{m.tag}</span>
+          {m.tag && <span> · {m.tag}</span>}
         </div>
       </div>
       {selected && <Icon.Check size={12} stroke={kc.fg} />}
