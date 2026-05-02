@@ -10,6 +10,7 @@ import {
   type Session,
 } from './session';
 import { clearAll, getMeta, setMeta } from './storage';
+import { clearWrapKey, jwtExpMs } from './biometric';
 import { MeoMark, Icon } from './Icon';
 import { ContextMenu, type MenuEntry } from './ContextMenu';
 import { SearchOverlay } from './SearchOverlay';
@@ -37,6 +38,16 @@ interface MenuState {
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
+  // Cold-start auth routing (Agent 1). When the user already has a
+  // valid JWT and a wrap_blob in IndexedDB, we route directly to the
+  // 'biometric' Auth mode so they can unlock with Touch ID instead of
+  // re-typing passphrase + Secret Key. `null` means "still deciding"
+  // — we render nothing until the IDB read completes so the user
+  // doesn't see the email screen flash before the biometric prompt.
+  const [authStart, setAuthStart] = useState<{
+    mode: 'email' | 'biometric';
+    email?: string;
+  } | null>(null);
   // First-run onboarding: shown to a brand-new user after Auth.tsx
   // succeeds, before they see the editor. Persists `onboarding_done`
   // so it never re-appears (Agent 7).
@@ -96,6 +107,41 @@ export default function App() {
   }, []);
 
   const refresh = useCallback(() => setTick(x => x + 1), []);
+
+  // ─── Cold-start auth routing (Agent 1) ───
+  // Decide whether to send the user straight into biometric unlock or
+  // start at the email screen. The check is conservative: we require
+  // a non-expired JWT *and* a wrap blob *and* the biometric_enabled
+  // flag to be on. Any failure defaults to the email/passphrase flow.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const meta = await getMeta();
+        const exp = meta.jwt ? jwtExpMs(meta.jwt) : null;
+        const hasValidJwt = !!meta.jwt && !!exp && Date.now() < exp;
+        const hasWrap = !!meta.master_wrap_blob && !!meta.master_wrap_nonce;
+        if (hasValidJwt && hasWrap && meta.biometric_enabled !== false) {
+          if (!cancelled) setAuthStart({ mode: 'biometric', email: meta.email });
+          return;
+        }
+        // JWT expired but wrap data left behind — clean up so the
+        // next biometric prompt isn't a no-op against stale meta.
+        if (!hasValidJwt && hasWrap) {
+          await setMeta({
+            master_wrap_blob: undefined,
+            master_wrap_nonce: undefined,
+            biometric_enabled: false,
+          });
+          await clearWrapKey();
+        }
+        if (!cancelled) setAuthStart({ mode: 'email' });
+      } catch {
+        if (!cancelled) setAuthStart({ mode: 'email' });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Block the browser's default context menu app-wide (Inspect Element etc).
   useEffect(() => {
@@ -333,10 +379,20 @@ export default function App() {
 
   const handleLogout = useCallback(async () => {
     if (!confirm('Sign out and clear local cache on this device?')) return;
+    // Clear the OS keychain wrap key first so a partial failure
+    // doesn't leave the keychain entry orphaned. clearWrapKey is
+    // best-effort; clearAll then nukes everything else (notes,
+    // vectors, meta including the wrap blob).
+    await clearWrapKey();
     await clearAll();
     setAttachmentsContext(null);
     setSession(null);
     setSelectedId(null);
+    // After sign-out the user should land on the email screen, not
+    // the biometric screen — clearAll wipes meta so the next mount
+    // would default to 'email' anyway, but we set it explicitly so
+    // we don't render `null` while waiting for the IDB read.
+    setAuthStart({ mode: 'email' });
   }, []);
 
   // Folder operations
@@ -584,7 +640,18 @@ export default function App() {
   useMenuEvents(menuHandlers);
 
   if (!session) {
-    return <AuthScreen onAuthenticated={onAuth} />;
+    // Wait for the cold-start boot effect to decide whether to send
+    // the user to email-OTP or biometric unlock. This is usually one
+    // microtask of IDB read; rendering `null` for that beat keeps us
+    // from flashing the email screen before the biometric prompt.
+    if (!authStart) return null;
+    return (
+      <AuthScreen
+        onAuthenticated={onAuth}
+        startMode={authStart.mode}
+        initialEmail={authStart.email}
+      />
+    );
   }
 
   if (onboardingPending) {
