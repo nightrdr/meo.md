@@ -17,6 +17,26 @@ import type {
 } from './types.js';
 import { ApiError } from './api.js';
 
+// ── Devices (Agent 9) ──
+export interface DeviceRow {
+  device_id: string;
+  name: string;
+  platform: string;
+  ua: string | null;
+  ip: string | null;
+  first_seen_at: string;
+  last_seen: string;
+}
+
+// ── Handovers (Agent 9) — see packages/shared/src/pairing.ts ──
+export interface HandoverRow {
+  ek_a_pub: Uint8Array | null;
+  ek_b_pub: Uint8Array | null;
+  payload_for_b: Uint8Array | null;
+  payload_nonce: Uint8Array | null;
+  expires_at: string;
+}
+
 export interface SupabaseConfig {
   url: string;       // e.g. http://127.0.0.1:54321
   anonKey: string;   // public anon key
@@ -233,6 +253,88 @@ export class SupabaseApiClient {
     };
   }
 
+  // ── Devices (Agent 9) ──
+
+  async listDevices(): Promise<DeviceRow[]> {
+    const { data, error } = await this.sb.rpc('devices_list');
+    if (error) throw mapPgError(error as any);
+    return ((data as any[]) ?? []).map((r: any) => ({
+      device_id: String(r.device_id),
+      name: String(r.name ?? 'Unnamed device'),
+      platform: String(r.platform ?? 'unknown'),
+      ua: r.ua ?? null,
+      ip: r.ip ?? null,
+      first_seen_at: String(r.first_seen_at),
+      last_seen: String(r.last_seen),
+    }));
+  }
+
+  async registerDevice(deviceId: string, platform: string, name: string, ua: string | null = null): Promise<void> {
+    const { error } = await this.sb.rpc('device_register', {
+      p_device_id: deviceId,
+      p_platform: platform,
+      p_name: name,
+      p_ua: ua,
+    });
+    if (error) throw mapPgError(error as any);
+  }
+
+  async revokeDevice(deviceId: string): Promise<void> {
+    const { error } = await this.sb.rpc('device_revoke', { p_device_id: deviceId });
+    if (error) throw mapPgError(error as any);
+  }
+
+  // ── Handovers (Agent 9) ──
+  //
+  // These RPCs accept anon-callable bearer-token semantics: the
+  // handover_id IS the secret. The desktop client passes its current
+  // JWT when available (Device A's case) but it isn't required.
+
+  async handoverCreate(id: string, ekAPub: Uint8Array): Promise<void> {
+    const { error } = await this.sb.rpc('handover_create', {
+      p_id: id,
+      p_ek_a_pub: bytesToHex(ekAPub),
+    });
+    if (error) throw mapPgError(error as any);
+  }
+
+  async handoverPutB(id: string, ekBPub: Uint8Array): Promise<void> {
+    const { error } = await this.sb.rpc('handover_put_b', {
+      p_id: id,
+      p_ek_b_pub: bytesToHex(ekBPub),
+    });
+    if (error) throw mapPgError(error as any);
+  }
+
+  async handoverPutPayload(id: string, payload: Uint8Array, nonce: Uint8Array): Promise<void> {
+    const { error } = await this.sb.rpc('handover_put_payload', {
+      p_id: id,
+      p_payload: bytesToHex(payload),
+      p_payload_nonce: bytesToHex(nonce),
+    });
+    if (error) throw mapPgError(error as any);
+  }
+
+  async handoverGet(id: string): Promise<HandoverRow | null> {
+    const { data, error } = await this.sb.rpc('handover_get', { p_id: id });
+    if (error) throw mapPgError(error as any);
+    const arr = (data as any[]) ?? [];
+    if (arr.length === 0) return null;
+    const r = arr[0];
+    return {
+      ek_a_pub: r.ek_a_pub ? hexToBytes(r.ek_a_pub) : null,
+      ek_b_pub: r.ek_b_pub ? hexToBytes(r.ek_b_pub) : null,
+      payload_for_b: r.payload_for_b ? hexToBytes(r.payload_for_b) : null,
+      payload_nonce: r.payload_nonce ? hexToBytes(r.payload_nonce) : null,
+      expires_at: String(r.expires_at),
+    };
+  }
+
+  async handoverClear(id: string): Promise<void> {
+    const { error } = await this.sb.rpc('handover_clear', { p_id: id });
+    if (error) throw mapPgError(error as any);
+  }
+
   // Read the caller's subscription row. Returns null if no row exists yet
   // (treat as `tier: 'free'`). RLS guarantees we only ever see auth.uid()'s
   // own row; a different user's row would simply not appear.
@@ -272,6 +374,7 @@ function mapPgError(error: { code?: string; message?: string }): ApiError {
   //   P0002 = not found (raised in delete_note)
   //   23505 = unique_violation (account already exists)
   if (code === '40001' || msg.includes('stale write')) return new ApiError(409, { error: msg });
+  if (code === 'P0009' || msg.includes('device_cap_exceeded')) return new ApiError(429, { error: 'device_cap_exceeded', code: 'device_cap_exceeded' });
   if (code === '42501' || msg.includes('forbidden')) return new ApiError(403, { error: msg });
   if (code === '28000' || msg.includes('unauthorized')) return new ApiError(401, { error: msg });
   if (code === 'P0002' || msg.includes('not found')) return new ApiError(404, { error: msg });
@@ -289,6 +392,20 @@ function hexToBase64(hex: string): string {
   let binary = '';
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
   return typeof btoa !== 'undefined' ? btoa(binary) : Buffer.from(bytes).toString('base64');
+}
+
+// Pairing/handovers RPCs prefer raw bytes; convert via the same hex
+// representation PostgREST uses for bytea columns.
+function bytesToHex(bytes: Uint8Array): string {
+  let hex = '\\x';
+  for (let i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, '0');
+  return hex;
+}
+function hexToBytes(hex: string): Uint8Array {
+  const stripped = hex.startsWith('\\x') ? hex.slice(2) : hex;
+  const out = new Uint8Array(stripped.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(stripped.slice(i * 2, i * 2 + 2), 16);
+  return out;
 }
 
 function base64ToHex(b64: string): string {

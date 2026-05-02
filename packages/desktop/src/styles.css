@@ -2147,3 +2147,101 @@ button, input, textarea, select { font: inherit; color: inherit; }
 }
 .about-link:hover { text-decoration: underline; }
 .about-modal .btn { margin-top: 14px; min-width: 88px; }
+
+/* ─── QR-pairing modal (Agent 9 — File ▸ New Device…) ─── */
+
+.pairing-modal {
+  width: 380px;
+  max-width: 90vw;
+  background: var(--overlay);
+  border: 1px solid var(--paper-edge);
+  border-radius: 14px;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.3);
+  padding: 18px 20px 20px;
+  font-family: var(--font-sans);
+}
+.pairing-header {
+  display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid var(--paper-edge);
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+}
+.pairing-header h1 {
+  flex: 1; margin: 0;
+  font-size: 14px; font-weight: 600;
+}
+.pairing-body { padding-top: 4px; }
+.pairing-body p.muted { font-size: 13px; line-height: 1.5; }
+.pairing-qr-wrap {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 8px; padding: 12px 0;
+}
+.pairing-qr {
+  width: 240px; height: 240px;
+  border-radius: 8px;
+  background: white;
+  padding: 6px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.pairing-ttl {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--ink3);
+}
+.pairing-fallback {
+  margin-top: 10px;
+  font-size: 12px; color: var(--ink2);
+}
+.pairing-fallback summary { cursor: pointer; user-select: none; }
+.pairing-fallback textarea {
+  width: 100%; margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  border: 1px solid var(--paper-edge);
+  border-radius: 6px;
+  padding: 6px;
+  resize: vertical;
+}
+.pairing-fallback .btn { margin-top: 6px; }
+
+/* ─── Device list (Settings → Devices) ─── */
+
+.device-list {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: 8px;
+}
+.device-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--paper-edge);
+  border-radius: 8px;
+  background: var(--paper);
+}
+.device-row.self {
+  border-color: var(--accent);
+  background: var(--paper-deep);
+}
+.device-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  background: var(--paper-deep);
+  color: var(--ink2);
+  flex-shrink: 0;
+}
+.device-meta { flex: 1; min-width: 0; }
+.device-name {
+  font-size: 13px; font-weight: 600;
+  display: flex; align-items: center; gap: 6px;
+}
+.device-this {
+  font-size: 10px; color: var(--accent);
+  background: var(--paper-deep);
+  border: 1px solid var(--paper-edge);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-weight: 500;
+}
+.device-sub {
+  font-size: 11px; color: var(--ink3);
+  margin-top: 2px;
+}

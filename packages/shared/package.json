@@ -19,7 +19,8 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^3.0.0",
-    "@supabase/supabase-js": "^2.50.0"
+    "@supabase/supabase-js": "^2.50.0",
+    "tweetnacl": "^1.0.3"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

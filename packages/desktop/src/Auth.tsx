@@ -25,6 +25,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   setupNewAccount, unlockAccount, formatSecretKey, parseSecretKey,
   humanizeAuthError,
+  decodeQr, makeBKeypair, derivePairKey, openBundle,
+  SupabaseApiClient, b64ToBytes,
 } from '@meo/shared';
 import { setMeta, getMeta } from './storage';
 import { makeApiClient, supabaseUrl, type Session } from './session';
@@ -35,7 +37,7 @@ import {
 } from './biometric';
 import { isMac, isWindows } from './platform';
 
-type Mode = 'email' | 'otp' | 'setup' | 'showSecret' | 'unlock' | 'biometric';
+type Mode = 'email' | 'otp' | 'setup' | 'showSecret' | 'unlock' | 'biometric' | 'pair';
 
 interface Props {
   onAuthenticated: (s: Session) => void;
@@ -228,7 +230,7 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
     setBusy(false);
   }
 
-  // ── Cold-start biometric unlock ──
+  // ── Cold-start biometric unlock (Agent 1) ──
   // Runs when App.tsx routes us into 'biometric' mode (valid JWT +
   // wrap_blob present in IndexedDB). The OS prompts for Touch ID /
   // Hello inside loadWrapKey(); we then decrypt the blob to rebuild
@@ -275,10 +277,6 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
   // screen. The user shouldn't have to click a button to "request the
   // prompt that asks them to authenticate" — that's a redundant step.
   // If they Esc / cancel, the button is still there for retry.
-  //
-  // Also: prime `pendingJwt` / `pendingUserId` from the persisted meta
-  // so that "Use passphrase instead" (which routes to mode='unlock')
-  // can complete handleUnlock without going back through OTP.
   useEffect(() => {
     if (mode === 'biometric') {
       let cancelled = false;
@@ -287,9 +285,6 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
         if (cancelled) return;
         if (meta.jwt) setPendingJwt(meta.jwt);
         if (meta.user_id) setPendingUserId(meta.user_id);
-        // Defer one tick so the screen renders before the OS modal —
-        // otherwise the JS event loop blocks long enough that the
-        // biometric sheet appears on top of a blank window.
         window.setTimeout(() => {
           if (!cancelled) void handleBiometricUnlock();
         }, 50);
@@ -310,13 +305,72 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
         master_wrap_nonce: undefined,
         biometric_enabled: false,
       });
-      // Drop back to the email screen rather than reloading the page.
       setMode('email');
       setEmail('');
       setError(null);
     } finally {
       setBusy(false);
     }
+  }
+
+  // ── QR pairing (Device B side, Agent 9) ──
+  // Paste-the-QR-text fallback (camera scan punted for v1). Flow:
+  //   1. parse QR → ek_a_pub + handover_id
+  //   2. generate ek_b_pub locally, deposit on handovers row
+  //   3. poll for payload_for_b (encrypted bundle from A)
+  //   4. derive pair_key, decrypt bundle, onAuthenticated
+  // Failures short-circuit; we never silently fall back to a less-
+  // secure flow.
+  const [pairText, setPairText] = useState('');
+  const [pairBusy, setPairBusy] = useState(false);
+
+  async function handlePair(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null); setInfo(null); setPairBusy(true);
+    try {
+      const payload = decodeQr(pairText);
+      if (!(api instanceof SupabaseApiClient)) {
+        throw new Error('QR pairing requires the Supabase backend.');
+      }
+      const ekA = b64ToBytes(payload.ek_a_pub);
+      const { ek_pub: ekBPub, ek_priv: ekBPriv } = await makeBKeypair();
+
+      await api.handoverPutB(payload.handover_id, ekBPub);
+
+      const started = Date.now();
+      let row: Awaited<ReturnType<SupabaseApiClient['handoverGet']>> | null = null;
+      while (Date.now() - started < 55_000) {
+        row = await api.handoverGet(payload.handover_id);
+        if (row?.payload_for_b && row.payload_nonce) break;
+        if (!row) break;
+        await sleep(1000);
+      }
+      if (!row || !row.payload_for_b || !row.payload_nonce) {
+        throw new Error('Pairing timed out. Try again from your existing device.');
+      }
+
+      const pairKey = await derivePairKey(ekBPriv, ekA, payload.handover_id);
+      const bundle = await openBundle(row.payload_for_b, row.payload_nonce, pairKey);
+
+      try { await api.handoverClear(payload.handover_id); } catch { /* noop */ }
+
+      api.setJwt(bundle.jwt);
+      const masterRaw = b64ToBytes(bundle.master_key_raw);
+      await setMeta({ jwt: bundle.jwt, user_id: bundle.user_id, email: bundle.email });
+      const session: Session = {
+        api,
+        masterRaw,
+        user_id: bundle.user_id,
+        email: bundle.email,
+        notes: new Map(),
+        syncCursor: 0,
+        hlc: { ms: Date.now(), counter: 0 },
+      };
+      onAuthenticated(session);
+    } catch (e) {
+      setError(humanizePairingError(e));
+    }
+    setPairBusy(false);
   }
 
   function continuePastSecret() {
@@ -368,6 +422,63 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
             <div className="switch" style={{ color: 'var(--ink3)', fontSize: 12 }}>
               First time? The same flow signs you up.
             </div>
+            <div className="switch" style={{ marginTop: 12 }}>
+              <a
+                onClick={() => { setMode('pair'); setError(null); setInfo(null); }}
+                style={{ cursor: 'pointer' }}
+              >
+                Already have Meo on another device? Scan QR from existing device →
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === 'pair') {
+    return (
+      <div className="auth-wrap">
+        <div>
+          <Brand />
+          <div className="auth-card">
+            <h1>Pair from existing device</h1>
+            <p className="sub">
+              On your other device, open <b>File ▸ New Device…</b>. It'll show a QR code
+              and a copyable text fallback. Paste that text below and we'll do the rest —
+              no passphrase needed.
+            </p>
+            <form onSubmit={handlePair}>
+              <label>Pairing code</label>
+              <textarea
+                rows={5}
+                required
+                value={pairText}
+                onChange={(e) => setPairText(e.target.value)}
+                placeholder="Paste the pairing text from your existing device…"
+                style={{ width: '100%', fontFamily: 'var(--font-mono)', fontSize: 12 }}
+                autoFocus
+              />
+              <Notices />
+              <div className="actions">
+                <button
+                  className="btn primary"
+                  type="submit"
+                  disabled={pairBusy || pairText.trim().length < 20}
+                  style={{ flex: 1 }}
+                >
+                  {pairBusy ? 'Pairing…' : 'Pair this device'}
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={pairBusy}
+                  onClick={() => { setMode('email'); setError(null); setInfo(null); }}
+                >
+                  Use email instead
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       </div>
@@ -582,4 +693,20 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
   }
 
   return null;
+}
+
+// ── Pairing helpers (Agent 9) ──
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+function humanizePairingError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (/expired/i.test(msg)) return 'That pairing code expired — generate a new one on your other device.';
+  if (/timed out/i.test(msg)) return 'Pairing timed out. Try again.';
+  if (/Invalid QR/i.test(msg) || /Unexpected token/i.test(msg) || /JSON/i.test(msg))
+    return 'That pairing code didn\'t parse. Make sure you copied the entire string.';
+  if (/Supabase backend/i.test(msg)) return msg;
+  return 'Pairing failed. Sign in with email instead.';
 }

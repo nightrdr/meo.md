@@ -19,11 +19,12 @@ import { ai as A, type Note, type Tier } from '@meo/shared';
 import { Icon } from './Icon';
 import { peekAIRuntime, getAIRuntime } from './aiStore';
 import { Subscription } from './Settings/Subscription';
+import { Devices } from './Settings/Devices';
 import type { Session } from './session';
 import { getCurrentTier } from './session';
 import { getMeta, setMeta } from './storage';
 
-export type SettingsTab = 'ai' | 'subscription';
+export type SettingsTab = 'ai' | 'subscription' | 'devices';
 
 interface PullState {
   modelId: string;
@@ -139,7 +140,7 @@ export function Settings({ session, notes, modelId, initialTab = 'ai', onSelectM
     s => !discoveredIds.has(normalize(s.id)),
   );
 
-  const tabLabel = tab === 'subscription' ? 'Subscription' : 'AI';
+  const tabLabel = tab === 'subscription' ? 'Subscription' : tab === 'devices' ? 'Devices' : 'AI';
 
   return (
     <div className="settings-overlay" onMouseDown={onClose}>
@@ -169,11 +170,24 @@ export function Settings({ session, notes, modelId, initialTab = 'ai', onSelectM
           >
             Subscription
           </button>
+          <button
+            className={`settings-tab ${tab === 'devices' ? 'active' : ''}`}
+            onClick={() => setTab('devices')}
+            type="button"
+          >
+            Devices
+          </button>
         </nav>
 
         {tab === 'subscription' && (
           <div className="settings-body">
             <Subscription session={session} />
+          </div>
+        )}
+
+        {tab === 'devices' && (
+          <div className="settings-body">
+            <Devices session={session} />
           </div>
         )}
 

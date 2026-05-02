@@ -17,8 +17,10 @@ import { SearchOverlay } from './SearchOverlay';
 import { AIControls, MODELS } from './AIControls';
 import { AIPanel } from './AIPanel';
 import { Settings, type SettingsTab } from './Settings';
+import { Pairing } from './Pairing';
 import { peekAIRuntime } from './aiStore';
-import { Mod, shortcut } from './platform';
+import { Mod, shortcut, isMac, isWindows } from './platform';
+import { SupabaseApiClient, uuidv4 } from '@meo/shared';
 import { setAttachmentsContext } from './AttachmentRenderer';
 import { supabaseUrl, supabaseAnonKey } from './session';
 import { useMenuEvents, type MenuHandlers } from './menus';
@@ -92,6 +94,10 @@ export default function App() {
   const [tier, setTier] = useState<ReturnType<typeof getCurrentTier>>('free');
   // Tiny About modal — opened from the App menu (Agent 5).
   const [aboutOpen, setAboutOpen] = useState(false);
+  // QR-pairing modal (Agent 9). Opened via File ▸ "New Device…" from the
+  // native menu bar, the sidebar, or programmatically from cap-reached
+  // toasts (the latter not wired yet).
+  const [pairingOpen, setPairingOpen] = useState(false);
   // Sidebar visibility — persisted via setMeta. Toggle through the
   // list-pane header button, the ⇧⌘S shortcut, or `toggleSidebar()`
   // (Agent 5's native View menu calls into this).
@@ -281,6 +287,32 @@ export default function App() {
     // Load subscription tier in the background. Failure is non-fatal — the
     // user just stays on the conservative 'free' default.
     refreshSubscription(s).then(() => setTier(getCurrentTier(s))).catch(() => {});
+
+    // Device registration (Agent 9). Generates a stable per-installation
+    // device id on first cold start and registers it so the Devices pane
+    // can see "this device" + the per-tier cap can count it. Best effort —
+    // a failure here doesn't block the app.
+    (async () => {
+      try {
+        if (!(s.api instanceof SupabaseApiClient)) return;
+        let did = meta.device_id;
+        let dname = meta.device_name;
+        if (!did) {
+          did = uuidv4();
+          dname = defaultDeviceName();
+          await setMeta({ device_id: did, device_name: dname });
+        }
+        await s.api.registerDevice(
+          did,
+          detectPlatform(),
+          dname ?? defaultDeviceName(),
+          typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 500) : null,
+        );
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[meo] device_register failed', e);
+      }
+    })();
   }, [refresh]);
 
   // Periodic poll
@@ -624,16 +656,17 @@ export default function App() {
       console.warn('[meo] menu event not yet wired: mode change');
     },
     onToggleSidebar: toggleSidebar,
-    // Collapse/expand section bridges — dispatched as DOM CustomEvents
-    // and consumed by Editor.tsx (Agent 4). Until Agent 5's menu wires
-    // the matching ids these only fire via keyboard shortcut, but the
-    // handlers are in place.
+    // Collapse/expand section bridges (Agent 4) — dispatched as DOM
+    // CustomEvents and consumed by Editor.tsx. Keyboard shortcuts also
+    // fire these directly until Agent 5's lib.rs adds the menu rows.
     onCollapseSection: () => document.dispatchEvent(new CustomEvent('meo:collapse-section')),
     onExpandSection: () => document.dispatchEvent(new CustomEvent('meo:expand-section')),
     onCollapseAllSections: () => document.dispatchEvent(new CustomEvent('meo:collapse-all')),
     onExpandAllSections: () => document.dispatchEvent(new CustomEvent('meo:expand-all')),
-    // export/import/print/insert-link/new-tag/new-device intentionally
-    // omitted — useMenuEvents will console.warn until those ship.
+    // QR pairing (Agent 9) — File ▸ New Device opens the modal.
+    onNewDevice: () => setPairingOpen(true),
+    // export/import/print/insert-link/new-tag intentionally omitted —
+    // useMenuEvents will console.warn until those ship.
   }), [
     handleNew, startCreateFolder, aiOn, dispatchFind, toggleSidebar,
   ]);
@@ -949,8 +982,43 @@ export default function App() {
       {aboutOpen && (
         <AboutModal onClose={() => setAboutOpen(false)} />
       )}
+
+      {/* QR-pairing modal — opened from File ▸ New Device… (Agent 9). */}
+      {pairingOpen && session && (
+        <Pairing session={session} onClose={() => setPairingOpen(false)} />
+      )}
     </div>
   );
+}
+
+// ─── Device naming + platform detection (Agent 9) ────────────────────
+//
+// `defaultDeviceName` builds a friendly name like "MacBook · Chrome" so
+// the Settings → Devices pane can distinguish entries before the user
+// renames them. `detectPlatform` returns one of the 5 strings the
+// `meo.devices.platform` column accepts.
+
+function defaultDeviceName(): string {
+  if (typeof navigator === 'undefined') return 'Desktop';
+  const ua = navigator.userAgent;
+  let host = 'Desktop';
+  if (isMac) host = 'Mac';
+  else if (isWindows) host = 'Windows PC';
+  else if (/Linux/i.test(ua)) host = 'Linux PC';
+  let browser = '';
+  if (/Edg\//.test(ua)) browser = 'Edge';
+  else if (/Chrome\//.test(ua)) browser = 'Chrome';
+  else if (/Safari\//.test(ua)) browser = 'Safari';
+  else if (/Firefox\//.test(ua)) browser = 'Firefox';
+  return browser ? `${host} · ${browser}` : host;
+}
+
+function detectPlatform(): string {
+  if (typeof navigator === 'undefined') return 'unknown';
+  if (isMac) return 'macos';
+  if (isWindows) return 'windows';
+  if (/Linux/i.test(navigator.userAgent)) return 'linux';
+  return 'web';
 }
 
 // Minimal About sheet. We render the Meo wordmark + version + a

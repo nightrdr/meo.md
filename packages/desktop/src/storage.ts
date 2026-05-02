@@ -34,6 +34,12 @@ interface Meta {
   master_wrap_blob?: string;     // base64 ciphertext (32 bytes + 16-byte tag)
   master_wrap_nonce?: string;    // base64 12-byte AES-GCM nonce
   biometric_enabled?: boolean;   // user opt-in flag (defaults to true on first setup)
+  // ─── Devices (Agent 9) ───
+  // Stable per-installation device id for the device cap + Devices pane.
+  // Generated lazily on first cold start; never sent in the QR pairing
+  // payload (B picks its own).
+  device_id?: string;
+  device_name?: string;
 }
 
 const DB_NAME = 'meo-md';
