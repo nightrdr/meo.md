@@ -173,7 +173,7 @@ export class SupabaseApiClient {
   async syncNotes(since: number): Promise<SyncResponse> {
     const { data, error } = await this.sb
       .from('notes')
-      .select('id, encrypted_content, nonce, version, hlc_timestamp, updated_at, deleted_at, size_bytes')
+      .select('id, encrypted_content, nonce, version, hlc_timestamp, updated_at, deleted_at, size_bytes, is_vault')
       .gt('version', since)
       .order('version', { ascending: true });
     if (error) throw new ApiError(500, { error: error.message });
@@ -186,6 +186,7 @@ export class SupabaseApiClient {
       updated_at: typeof r.updated_at === 'string' ? Date.parse(r.updated_at) : Number(r.updated_at),
       deleted_at: r.deleted_at == null ? null : (typeof r.deleted_at === 'string' ? Date.parse(r.deleted_at) : Number(r.deleted_at)),
       size_bytes: Number(r.size_bytes ?? 0),
+      is_vault: Boolean((r as any).is_vault ?? false),
     }));
     const cursor = rows.length ? rows[rows.length - 1].version : since;
     return { notes: rows, cursor };
@@ -198,6 +199,7 @@ export class SupabaseApiClient {
       p_nonce: base64ToHex(row.nonce),
       p_hlc_timestamp: row.hlc_timestamp,
       p_size_bytes: row.size_bytes,
+      p_is_vault: Boolean(row.is_vault ?? false),
     });
     if (error) {
       throw mapPgError(error);
@@ -212,6 +214,7 @@ export class SupabaseApiClient {
       updated_at: typeof r.updated_at === 'string' ? Date.parse(r.updated_at) : Number(r.updated_at),
       deleted_at: r.deleted_at == null ? null : (typeof r.deleted_at === 'string' ? Date.parse(r.deleted_at) : Number(r.deleted_at)),
       size_bytes: Number(r.size_bytes ?? 0),
+      is_vault: Boolean(r.is_vault ?? false),
     };
   }
 
@@ -230,7 +233,45 @@ export class SupabaseApiClient {
       updated_at: typeof r.updated_at === 'string' ? Date.parse(r.updated_at) : Number(r.updated_at),
       deleted_at: r.deleted_at == null ? null : (typeof r.deleted_at === 'string' ? Date.parse(r.deleted_at) : Number(r.deleted_at)),
       size_bytes: Number(r.size_bytes ?? 0),
+      is_vault: Boolean(r.is_vault ?? false),
     };
+  }
+
+  // ─── 2FA (Agent 8) ───────────────────────────────────────────────
+  // Tiny client-side wrapper around the tfa-enroll / tfa-verify Edge
+  // Functions plus the meo.tfa_status RPC. Kept here (rather than in a
+  // separate module) so the desktop UI gets a single typed surface for
+  // both the sync data path and the security knobs.
+
+  async tfaStatus(): Promise<boolean> {
+    const { data, error } = await this.sb.rpc('tfa_status');
+    if (error) throw mapPgError(error as any);
+    return Boolean(data);
+  }
+
+  async tfaEnroll(): Promise<{ otpauth_url: string; secret_b32: string }> {
+    if (!this.jwt) throw new ApiError(401, { error: 'not authenticated' });
+    const url = `${this.baseUrl.replace(/\/$/, '')}/functions/v1/tfa-enroll`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'authorization': `Bearer ${this.jwt}`, 'content-type': 'application/json' },
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new ApiError(res.status, body);
+    return body;
+  }
+
+  async tfaVerify(code: string): Promise<{ token: string; expires_at: number }> {
+    if (!this.jwt) throw new ApiError(401, { error: 'not authenticated' });
+    const url = `${this.baseUrl.replace(/\/$/, '')}/functions/v1/tfa-verify`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'authorization': `Bearer ${this.jwt}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new ApiError(res.status, body);
+    return body;
   }
 
   // Read the caller's subscription row. Returns null if no row exists yet

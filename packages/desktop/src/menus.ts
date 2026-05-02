@@ -36,6 +36,11 @@ export interface MenuHandlers {
   // ─── App menu ───
   onAbout?: () => void;
   onSettings?: () => void;
+  // Agent 8 — App ▸ Lock all vault notes. Re-locks every currently-unlocked
+  // vault note in this session. Invoked from the App menu under Settings…
+  // (the spec asks us to coordinate with Agent 5's existing menu structure
+  // rather than adding a new top-level menu).
+  onLockAllVault?: () => void;
   // ─── File ───
   onNewNote?: () => void;
   onNewFolder?: () => void;
@@ -58,6 +63,7 @@ export interface MenuHandlers {
 const MENU_IDS = [
   'about',
   'settings',
+  'lock-all-vault',
   'new-note',
   'new-folder',
   'new-tag',
@@ -133,6 +139,7 @@ function dispatch(id: MenuId, h: MenuHandlers): void {
   switch (id) {
     case 'about':           return runOrWarn(id, h.onAbout);
     case 'settings':        return runOrWarn(id, h.onSettings);
+    case 'lock-all-vault':  return runOrWarn(id, h.onLockAllVault);
     case 'new-note':        return runOrWarn(id, h.onNewNote);
     case 'new-folder':      return runOrWarn(id, h.onNewFolder);
     case 'new-tag':         return runOrWarn(id, h.onNewTag);

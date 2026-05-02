@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import type { Note } from '@meo/shared';
+import { isVaultLockedBody, type Note } from '@meo/shared';
 import { AuthScreen } from './Auth';
 import { Onboarding } from './Onboarding';
 import { Editor } from './Editor';
@@ -7,8 +7,11 @@ import {
   rehydrateNotes, pullSync, saveNote, deleteNote, newDraft, buildFolderTree,
   buildTagList, renameFolderEverywhere, moveNoteToFolder,
   refreshSubscription, getCurrentTier,
+  setVault, unlockVaultNote, relockVaultNote, relockAllVaultNotes,
   type Session,
 } from './session';
+import { Vault } from './Vault';
+import { TFAVerify, shouldGateTfa } from './TFA';
 import { clearAll, getMeta, setMeta } from './storage';
 import { MeoMark, Icon } from './Icon';
 import { ContextMenu, type MenuEntry } from './ContextMenu';
@@ -85,6 +88,17 @@ export default function App() {
   // list-pane header button, the ⇧⌘S shortcut, or `toggleSidebar()`
   // (Agent 5's native View menu calls into this).
   const [sidebarHidden, setSidebarHidden] = useState(false);
+  // Vault unlock modal (Agent 8). When the user clicks a vault-flagged
+  // note whose body is still in `vault:...` wire form, we surface this
+  // before swapping selectedId → editor.
+  const [vaultPrompt, setVaultPrompt] = useState<{ noteId: string } | null>(null);
+  // Tracks the previously-open note id so we can re-lock vault notes on
+  // switch. Mirrors `selectedId` but lags by one render — see the effect
+  // below that runs `relockVaultNote` on the previous id.
+  const lastSelectedRef = useRef<string | null>(null);
+  // 2FA gate (Agent 8). True when the cold-start TOTP screen is showing.
+  // Cleared once the user enters a valid 6-digit code.
+  const [tfaGated, setTfaGated] = useState(false);
   const saveTimer = useRef<number | null>(null);
 
   const toggleSidebar = useCallback(() => {
@@ -234,7 +248,19 @@ export default function App() {
     }
     // Load subscription tier in the background. Failure is non-fatal — the
     // user just stays on the conservative 'free' default.
-    refreshSubscription(s).then(() => setTier(getCurrentTier(s))).catch(() => {});
+    refreshSubscription(s).then(async () => {
+      const t = getCurrentTier(s);
+      setTier(t);
+      // Cold-start 2FA gate (Agent 8). For Business+ users with TFA on,
+      // present the TOTP screen between OTP-verify and unlock-screen.
+      // shouldGateTfa() does the tier+RPC probe in one shot.
+      try {
+        if (await shouldGateTfa(s, t)) setTfaGated(true);
+      } catch {
+        // Don't block sign-in on a transient failure — the server-side
+        // middleware on tier-restricted endpoints will reject if needed.
+      }
+    }).catch(() => {});
   }, [refresh]);
 
   // Periodic poll
@@ -454,16 +480,22 @@ export default function App() {
   ], [startCreateFolder]);
 
   const noteMenuItems = useCallback((note: Note): MenuEntry[] => {
+    const locked = !!note.isVault && isVaultLockedBody(note.body);
     return [
       { label: 'Open', icon: 'Note', onClick: () => setSelectedId(note.id) },
-      { label: 'Duplicate', icon: 'Copy', onClick: async () => {
+      { label: 'Duplicate', icon: 'Copy', disabled: locked, onClick: async () => {
         if (!session) return;
+        if (locked) return;
         const copy: Note = {
           ...note,
           id: crypto.randomUUID(),
           title: `${note.title || 'Untitled'} copy`,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          // Cloned vault notes start un-vaulted: duplicating a locked note
+          // would otherwise require the user to unlock it first, which
+          // surprises people. They can re-lock the copy from the menu.
+          isVault: false,
         };
         session.notes.set(copy.id, copy);
         await saveNote(session, copy);
@@ -472,7 +504,28 @@ export default function App() {
       }},
       { separator: true },
       { label: 'Copy title', icon: 'Copy', onClick: () => navigator.clipboard.writeText(note.title || 'Untitled') },
-      { label: 'Copy markdown body', icon: 'Copy', onClick: () => navigator.clipboard.writeText(note.body) },
+      // Copy body is disabled for locked vault notes — copying ciphertext
+      // would be confusing and copying after unlock requires opening the
+      // editor first.
+      { label: 'Copy markdown body', icon: 'Copy', disabled: locked,
+        onClick: () => navigator.clipboard.writeText(locked ? '' : note.body) },
+      { separator: true },
+      // Vault toggle (Agent 8). Locking is always available; unlocking
+      // requires opening the note (so the unlock modal can run).
+      note.isVault
+        ? { label: 'Unlock note', icon: 'Lock',
+            onClick: () => { setSelectedId(note.id); if (locked) setVaultPrompt({ noteId: note.id }); }}
+        : { label: 'Lock note', icon: 'Lock', onClick: async () => {
+            if (!session) return;
+            try { await setVault(session, note.id, true); refresh(); }
+            catch (e) { setStatus('error'); setStatusMsg(`Lock failed: ${(e as Error).message}`); }
+          }},
+      { label: 'Remove vault flag', icon: 'Trash', disabled: !note.isVault || locked,
+        onClick: async () => {
+          if (!session) return;
+          try { await setVault(session, note.id, false); refresh(); }
+          catch (e) { setStatus('error'); setStatusMsg(`Unlock failed: ${(e as Error).message}`); }
+        }},
       { separator: true },
       { label: 'Delete note', icon: 'Trash', danger: true, onClick: () => handleDeleteNote(note.id) },
     ];
@@ -498,6 +551,28 @@ export default function App() {
       },
     },
   ], [session, selectedTag, refresh]);
+
+  // Vault: when selection changes, re-lock the previously-open vault note
+  // and auto-prompt the unlock modal for the new selection if it's locked.
+  useEffect(() => {
+    if (!session) return;
+    const prev = lastSelectedRef.current;
+    lastSelectedRef.current = selectedId;
+    if (prev && prev !== selectedId) {
+      relockVaultNote(session, prev).then(() => refresh()).catch(() => {});
+    }
+    if (selectedId) {
+      const n = session.notes.get(selectedId);
+      if (n && n.isVault && isVaultLockedBody(n.body)) {
+        setVaultPrompt({ noteId: selectedId });
+      } else {
+        setVaultPrompt(null);
+      }
+    } else {
+      setVaultPrompt(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, session]);
 
   // Persist expandedFolders + AI prefs
   useEffect(() => { setMeta({ expanded_folders: Array.from(expandedFolders) }); }, [expandedFolders]);
@@ -557,6 +632,13 @@ export default function App() {
   const menuHandlers = useMemo<MenuHandlers>(() => ({
     onAbout: () => setAboutOpen(true),
     onSettings: () => setSettingsOpen(true),
+    onLockAllVault: () => {
+      // Agent 8 — re-lock every currently-unlocked vault note. Cheap when
+      // none are unlocked. Refresh fires a re-render so list previews swap
+      // back to 🔒.
+      if (!session) return;
+      relockAllVaultNotes(session).then(() => refresh()).catch(() => {});
+    },
     onNewNote: () => { void handleNew(); },
     onNewFolder: () => startCreateFolder(''),
     onSearchNotes: () => setSearchOpen(true),
@@ -571,7 +653,7 @@ export default function App() {
     // export/import/print/insert-link/new-tag/new-device intentionally
     // omitted — useMenuEvents will console.warn until those ship.
   }), [
-    handleNew, startCreateFolder, aiOn, dispatchFind, toggleSidebar,
+    handleNew, startCreateFolder, aiOn, dispatchFind, toggleSidebar, session, refresh,
   ]);
   useMenuEvents(menuHandlers);
 
@@ -766,7 +848,16 @@ export default function App() {
           {groupNotesByDate(visibleNotes).map(({ label, notes }) => (
             <React.Fragment key={label}>
               <div className="list-date-header">{label}</div>
-              {notes.map((n) => (
+              {notes.map((n) => {
+                // Vault preview redaction (Agent 8). A vault-flagged note
+                // whose body is still in `vault:...` wire form (i.e. not
+                // unlocked for this open) renders a placeholder — never the
+                // ciphertext, never a partial title leak.
+                const vaultLocked = !!n.isVault && isVaultLockedBody(n.body);
+                const previewText = vaultLocked
+                  ? 'Vault note'
+                  : ((n.body.split('\n').find(l => l.trim() && !l.startsWith('#')) ?? '').slice(0, 200) || ' ');
+                return (
                 <div
                   key={n.id}
                   className={`note-item ${n.id === selectedId ? 'active' : ''}`}
@@ -779,13 +870,14 @@ export default function App() {
                   }}
                 >
                   <div className="title-row">
-                    <span className="title">{n.title || 'Untitled'}</span>
+                    <span className="title">
+                      {n.isVault && <Icon.Lock size={11} className="vault-pad" />}
+                      {n.title || 'Untitled'}
+                    </span>
                     <span className="updated">{formatTimeAgo(n.updated_at)}</span>
                   </div>
-                  <div className="preview">
-                    {(n.body.split('\n').find(l => l.trim() && !l.startsWith('#')) ?? '').slice(0, 200) || ' '}
-                  </div>
-                  {n.tags.length > 0 && (
+                  <div className="preview">{previewText}</div>
+                  {n.tags.length > 0 && !vaultLocked && (
                     <div className="note-item-tags">
                       {n.tags.slice(0, 3).map(t => (
                         <span key={t} className="note-item-tag">#{t}</span>
@@ -793,7 +885,8 @@ export default function App() {
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </React.Fragment>
           ))}
         </div>
@@ -873,6 +966,33 @@ export default function App() {
       {/* About modal — opened from the macOS App menu (Agent 5). */}
       {aboutOpen && (
         <AboutModal onClose={() => setAboutOpen(false)} />
+      )}
+
+      {/* Vault unlock modal (Agent 8). Mounts when the selected note is a
+          locked vault note; resolved by calling unlockVaultNote on the
+          session, which decrypts the inner body in place. */}
+      {vaultPrompt && session && (() => {
+        const n = session.notes.get(vaultPrompt.noteId);
+        return (
+          <Vault
+            noteTitle={n?.title ?? ''}
+            onUnlock={async () => {
+              await unlockVaultNote(session, vaultPrompt.noteId);
+              setVaultPrompt(null);
+              refresh();
+            }}
+            onCancel={() => {
+              setVaultPrompt(null);
+              setSelectedId(null);
+            }}
+          />
+        );
+      })()}
+
+      {/* 2FA cold-start gate (Agent 8). Business+ only. Stays mounted
+          until the user enters a valid 6-digit TOTP code. */}
+      {tfaGated && session && (
+        <TFAVerify session={session} onVerified={() => setTfaGated(false)} />
       )}
     </div>
   );

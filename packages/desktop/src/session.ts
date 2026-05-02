@@ -3,9 +3,13 @@
 import {
   ApiClient, SupabaseApiClient, encryptNote, decryptNote, base64ToBytes, bytesToBase64,
   hlcZero, hlcTick, hlcEncode, hlcCompare, uuidv4,
+  deriveVaultKey, isVaultLockedBody,
   type Note, type EncryptedNoteRow, type SubscriptionRow, type Tier,
 } from '@meo/shared';
 import { getMeta, setMeta, listCachedNotes, putCachedNote } from './storage';
+// listCachedNotes is also used directly inside the vault re-lock helpers
+// below — keep this import the single source of truth so bundler chunking
+// matches the pre-existing (Auth/Onboarding/aiStore) static-import pattern.
 
 declare const __API_URL__: string;
 declare const __SUPABASE_URL__: string;
@@ -26,6 +30,17 @@ export interface Session {
   // Cached subscription row, lazily loaded after auth (refreshSubscription).
   // `null` means "not loaded yet"; a missing row → tier 'free'.
   subscription?: SubscriptionRow | null;
+  // Agent 8 — Vault feature.
+  // `vaultKey` is derived once on session adoption (lazy: only when the
+  // first vault unlock is requested) via HKDF over masterRaw + user_id.
+  // `unlockedVaultIds` tracks which vault notes are currently open in
+  // plaintext form. Closing/switching notes clears entries — see
+  // `relockVaultNote()` and `relockAllVaultNotes()` below.
+  vaultKey?: CryptoKey;
+  unlockedVaultIds?: Set<string>;
+  // 2FA (Agent 8). Set once after a successful tfa-verify call so subsequent
+  // requests can attach the X-MEO-TFA-Token header. Cleared on cold-start.
+  tfaToken?: string;
 }
 
 /**
@@ -76,12 +91,82 @@ export async function rehydrateNotes(session: Session): Promise<void> {
   for (const row of cached) {
     if (row.deleted_at) continue;
     try {
-      const note = await decryptNote(base64ToBytes(row.encrypted_content), base64ToBytes(row.nonce), row.id, session.masterRaw);
+      // Pass `undefined` for vaultKey on rehydrate — we don't unlock vault
+      // notes from cache. Their bodies stay in `vault:<n>:<ct>` wire form
+      // until the user explicitly unlocks via the modal.
+      const note = await decryptNote(
+        base64ToBytes(row.encrypted_content), base64ToBytes(row.nonce), row.id, session.masterRaw,
+      );
       session.notes.set(row.id, note);
     } catch (e) {
       console.warn('failed to decrypt cached note', row.id, e);
     }
   }
+}
+
+// ─── Vault helpers (Agent 8) ──────────────────────────────────────
+//
+// `ensureVaultKey` derives once (HKDF over masterRaw, salt = user_id) and
+// caches on the Session. The actual unlock prompt is owned by Vault.tsx;
+// once the user passes biometric/passphrase, the UI calls
+// `unlockVaultNote(session, noteId)` to swap the locked body for plaintext.
+
+export async function ensureVaultKey(session: Session): Promise<CryptoKey> {
+  if (session.vaultKey) return session.vaultKey;
+  session.vaultKey = await deriveVaultKey(session.masterRaw, session.user_id);
+  return session.vaultKey;
+}
+
+/** Decrypt the vault body in-place for a single note. Returns the unlocked Note. */
+export async function unlockVaultNote(session: Session, noteId: string): Promise<Note> {
+  const note = session.notes.get(noteId);
+  if (!note) throw new Error('note not found');
+  if (!note.isVault) return note;
+  if (!isVaultLockedBody(note.body)) return note; // already plaintext for this open
+  const vaultKey = await ensureVaultKey(session);
+  // Re-decrypt from the cached row so we always start from ciphertext (avoids
+  // double-unwrap edge cases if the caller hands us a stale Note).
+  const cached = await listCachedNotes();
+  const row = cached.find(r => r.id === noteId);
+  if (!row) throw new Error('note not in cache');
+  const fresh = await decryptNote(
+    base64ToBytes(row.encrypted_content),
+    base64ToBytes(row.nonce),
+    row.id,
+    session.masterRaw,
+    vaultKey,
+  );
+  session.notes.set(noteId, fresh);
+  if (!session.unlockedVaultIds) session.unlockedVaultIds = new Set();
+  session.unlockedVaultIds.add(noteId);
+  return fresh;
+}
+
+/**
+ * Re-lock a single vault note: drops the plaintext body from the in-memory
+ * Note and replaces it with the on-disk vault marker. The user has to
+ * unlock again next time. Called on close-note / switch-note in App.tsx.
+ */
+export async function relockVaultNote(session: Session, noteId: string): Promise<void> {
+  if (!session.unlockedVaultIds?.has(noteId)) return;
+  const cached = await listCachedNotes();
+  const row = cached.find(r => r.id === noteId);
+  if (!row) return;
+  // Decrypt outer-only (no vaultKey) so we get the vault marker back.
+  const locked = await decryptNote(
+    base64ToBytes(row.encrypted_content),
+    base64ToBytes(row.nonce),
+    row.id,
+    session.masterRaw,
+  );
+  session.notes.set(noteId, locked);
+  session.unlockedVaultIds.delete(noteId);
+}
+
+/** "Lock all vault notes" — invoked from the App menu item. */
+export async function relockAllVaultNotes(session: Session): Promise<void> {
+  const ids = Array.from(session.unlockedVaultIds ?? []);
+  for (const id of ids) await relockVaultNote(session, id);
 }
 
 export async function pullSync(session: Session): Promise<{ pulled: number }> {
@@ -92,7 +177,15 @@ export async function pullSync(session: Session): Promise<{ pulled: number }> {
       session.notes.delete(row.id);
     } else {
       try {
-        const note = await decryptNote(base64ToBytes(row.encrypted_content), base64ToBytes(row.nonce), row.id, session.masterRaw);
+        // Don't pass vaultKey: synced vault notes stay locked until the user
+        // actively opens them.
+        const note = await decryptNote(
+          base64ToBytes(row.encrypted_content), base64ToBytes(row.nonce), row.id, session.masterRaw,
+        );
+        // The server's is_vault flag is the source of truth for the lock-icon
+        // preview. If it ever disagrees with the in-blob isVault (e.g.
+        // older client wrote without the flag), prefer the row.
+        if (typeof row.is_vault === 'boolean') note.isVault = row.is_vault;
         session.notes.set(row.id, note);
         // advance HLC to dominate any inbound clock
         const inboundMs = Number(row.hlc_timestamp.split('-')[0]);
@@ -116,13 +209,20 @@ export async function saveNote(session: Session, note: Note): Promise<Note> {
     updated_at: new Date().toISOString(),
     hlc: hlcEncode(session.hlc),
   };
-  const enc = await encryptNote(updated, session.masterRaw);
+  // Vault wrap: pass the cached vault key only if the note is currently
+  // unlocked (plaintext body). When the body is already in `vault:...`
+  // wire form, encryptNote() leaves it alone (idempotent).
+  const vaultKey = updated.isVault
+    ? (session.vaultKey ?? (session.unlockedVaultIds?.has(updated.id) ? await ensureVaultKey(session) : undefined))
+    : undefined;
+  const enc = await encryptNote(updated, session.masterRaw, vaultKey);
   const row: EncryptedNoteRow = {
     id: updated.id,
     encrypted_content: bytesToBase64(enc.ciphertext),
     nonce: bytesToBase64(enc.nonce),
     hlc_timestamp: updated.hlc,
     updated_at: 0, deleted_at: null, version: 0, size_bytes: enc.ciphertext.length,
+    is_vault: Boolean(updated.isVault),
   };
   const saved = await session.api.upsertNote(row);
   await putCachedNote(saved);
@@ -247,4 +347,28 @@ export { hlcCompare };
  * without hard-coding numbers in two places.
  */
 export const BUSINESS_OVERAGE_RATE = { tokens: 100_000, usd_cents: 500 };
+
+/**
+ * Toggle a note's vault flag and persist. When turning a note INTO a vault
+ * note we need the vault key on hand (it'll wrap the body on the next save).
+ * When turning OFF, we leave the body as plaintext — but only if the note is
+ * currently unlocked. Locking a vault, then trying to un-vault it without
+ * unlocking, is rejected (the caller should run unlockVaultNote first).
+ */
+export async function setVault(session: Session, noteId: string, isVault: boolean): Promise<Note> {
+  const note = session.notes.get(noteId);
+  if (!note) throw new Error('note not found');
+  if (!isVault && isVaultLockedBody(note.body)) {
+    throw new Error('unlock the note before removing the vault flag');
+  }
+  if (isVault) await ensureVaultKey(session);
+  const next: Note = { ...note, isVault };
+  if (isVault && !session.unlockedVaultIds?.has(noteId)) {
+    if (!session.unlockedVaultIds) session.unlockedVaultIds = new Set();
+    // The note is currently plaintext (we just flipped the flag), so mark it
+    // as "unlocked for this open" — saveNote will wrap it on the next tick.
+    session.unlockedVaultIds.add(noteId);
+  }
+  return saveNote(session, next);
+}
 
