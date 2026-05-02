@@ -3,12 +3,12 @@
 //
 //   - Ollama at the configured endpoint (default: http://localhost:11434).
 //     On a real phone localhost is the device itself, so this only
-//     succeeds when Ollama is forwarded via the LAN — not common, but
+//     succeeds when Ollama is forwarded via the LAN - not common, but
 //     supported for power users.
 //   - llama.rn (phase 3.5, post-prebuild)
 //   - Apple FoundationModels / Gemini Nano (phase 3.5)
 //
-// In v1.0 phase 3, the most likely state is "no backend reachable" — the
+// In v1.0 phase 3, the most likely state is "no backend reachable" - the
 // sheet then surfaces a clear status card and the suggestions are
 // placeholders.
 
@@ -187,7 +187,7 @@ export function AISheet({ visible, onClose, notes, modelId, noteTitle, onOpenNot
               <Card>
                 <Text style={cardH}>No on-device AI runtime yet</Text>
                 <Text style={cardP}>
-                  Mobile inference (llama.rn) requires <Text style={cardCode}>npx expo prebuild</Text> + a native build. The desktop app already runs local LLMs via Ollama and a hybrid retrieval pipeline (BM25 + vector + RRF) over your encrypted notes — same code path will run here once the native runtime is wired in.
+                  Mobile inference (llama.rn) requires <Text style={cardCode}>npx expo prebuild</Text> + a native build. The desktop app already runs local LLMs via Ollama and a hybrid retrieval pipeline (BM25 + vector + RRF) over your encrypted notes - same code path will run here once the native runtime is wired in.
                 </Text>
               </Card>
             )}

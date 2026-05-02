@@ -1,6 +1,6 @@
 // Read-only list of decrypted notes. Tap a row to push a NoteScreen.
 //
-// Write-side (create / edit / delete) is deliberately deferred — see
+// Write-side (create / edit / delete) is deliberately deferred - see
 // the README's "Phase 2" section. The shared API has upsertNote /
 // deleteNote available when we're ready.
 
@@ -23,7 +23,7 @@ interface Props {
 }
 
 export function NotesListScreen({ session, onOpenNote, onOpenSettings }: Props) {
-  // updated_at is an ISO/HLC string in @meo/shared — string compare
+  // updated_at is an ISO/HLC string in @meo/shared - string compare
   // sorts correctly (ISO 8601 is lexicographically ordered).
   const notes = Array.from(session.notes.values()).sort((a, b) =>
     (b.updated_at ?? '').localeCompare(a.updated_at ?? ''),
@@ -41,7 +41,7 @@ export function NotesListScreen({ session, onOpenNote, onOpenSettings }: Props) 
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>No notes yet</Text>
           <Text style={styles.emptySub}>
-            Create some on desktop — the RN shell is read-only in v1.
+            Create some on desktop - the RN shell is read-only in v1.
           </Text>
         </View>
       ) : (

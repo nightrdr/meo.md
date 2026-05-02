@@ -1,5 +1,5 @@
 // Hand-drawn-feeling line icons matching design-mocks/components/icons.jsx.
-// 1.6 stroke, rounded caps. No emoji, no Material/Lucide imports — kept inline.
+// 1.6 stroke, rounded caps. No emoji, no Material/Lucide imports - kept inline.
 
 import React from 'react';
 
@@ -27,7 +27,7 @@ export const Icon = {
   FolderPlus: (p: IconProps) => <I {...p}><path d="M3 7c0-1.1.9-2 2-2h4l2 2h8c1.1 0 2 .9 2 2v8c0 1.1-.9 2-2 2H5a2 2 0 0 1-2-2V7z"/><path d="M12 11v6M9 14h6"/></I>,
   Note: (p: IconProps) => <I {...p}><path d="M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></I>,
   Search: (p: IconProps) => <I {...p}><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></I>,
-  // Two independent strokes (instead of one path with two subpaths) —
+  // Two independent strokes (instead of one path with two subpaths) -
   // more robust to engines that drop subpath joins, especially at small
   // rendered sizes where the 1.6 viewBox stroke gets sub-pixel scaling.
   Plus: (p: IconProps) => <I {...p}><path d="M12 5v14"/><path d="M5 12h14"/></I>,
@@ -77,21 +77,21 @@ export const Icon = {
   Sidebar: (p: IconProps) => <I {...p}><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M9 5v14"/></I>,
   // Math (KaTeX): a stylized "Σ" sigma, the math-button glyph in many editors.
   Math: (p: IconProps) => <I {...p}><path d="M18 5H6l6 7-6 7h12"/></I>,
-  // Mermaid (diagram): two connected boxes — "node → node".
+  // Mermaid (diagram): two connected boxes - "node → node".
   Diagram: (p: IconProps) => <I {...p}><rect x="3" y="4" width="7" height="6" rx="1"/><rect x="14" y="14" width="7" height="6" rx="1"/><path d="M10 7h4M14 17h-4M10 7c2 0 4 2 4 5v5"/></I>,
-  // Download: a tray + downward arrow — for the export submenu icon.
+  // Download: a tray + downward arrow - for the export submenu icon.
   Download: (p: IconProps) => <I {...p}><path d="M12 4v12M7 11l5 5 5-5M5 20h14"/></I>,
   // Summary: lines with a star representing distilled text
   Summary: (p: IconProps) => <I {...p}><path d="M4 8h12M4 12h10M4 16h7"/><path d="m18 14 1.2 2.5L22 17l-2 1.7.5 2.6-2.5-1.4-2.5 1.4.5-2.6L14 17l2.8-.5L18 14z"/></I>,
-  // Mic: pill-shaped capsule on a stand — the usual dictation glyph.
+  // Mic: pill-shaped capsule on a stand - the usual dictation glyph.
   Mic: (p: IconProps) => <I {...p}><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></I>,
   // Video: a film frame with a play triangle inside.
   Video: (p: IconProps) => <I {...p}><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3z"/></I>,
-  // Audio: a stylized waveform — three vertical bars of varying height.
+  // Audio: a stylized waveform - three vertical bars of varying height.
   Audio: (p: IconProps) => <I {...p}><path d="M5 10v4M9 7v10M13 4v16M17 8v8M21 11v2"/></I>,
 };
 
-// Logo mark — Meo: a filleted-square "M" notch in warm ink with a green accent dot
+// Logo mark - Meo: a filleted-square "M" notch in warm ink with a green accent dot
 export const MeoMark: React.FC<{ size?: number; color?: string }> = ({ size = 22, color }) => (
   <svg width={size} height={size} viewBox="0 0 28 28" fill="none">
     <rect x="2" y="2" width="24" height="24" rx="7" fill={color || '#1F1C17'}/>

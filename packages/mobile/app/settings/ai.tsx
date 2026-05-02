@@ -187,7 +187,7 @@ export default function AISettingsScreen() {
     // Drop cached runtime so the next AI call picks up the new embedder.
     clearAIRuntime();
     if (session) {
-      // Re-index — vec_hash will mismatch (different embedder_id), so all
+      // Re-index - vec_hash will mismatch (different embedder_id), so all
       // notes get re-embedded with the new model.
       setReindexing(true);
       try {
@@ -299,7 +299,7 @@ export default function AISettingsScreen() {
           <>
             <Text style={SECTION_H}>System AI</Text>
             <Text style={SECTION_P}>
-              Apple Intelligence runs in the OS — no download, no network. Available on iOS 18+ devices that support it.
+              Apple Intelligence runs in the OS - no download, no network. Available on iOS 18+ devices that support it.
             </Text>
             <View style={{ marginHorizontal: 16, marginBottom: 14, backgroundColor: MEO.card, borderRadius: 14, borderWidth: 1, borderColor: MEO.paperEdge, overflow: 'hidden' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 }}>
@@ -343,7 +343,7 @@ export default function AISettingsScreen() {
         {/* ─── Embeddings ─── */}
         <Text style={SECTION_H}>Embeddings</Text>
         <Text style={SECTION_P}>
-          Power Ask Meo's retrieval. Two modes: (a) the no-op embedder ships in the bundle and lets BM25 carry retrieval (default, recommended for v1.0). (b) bge-small-en-v1.5 via onnxruntime-react-native — 384-dim vectors, ~33 MB ONNX + 250 KB vocab, downloaded on demand.
+          Power Ask Meo's retrieval. Two modes: (a) the no-op embedder ships in the bundle and lets BM25 carry retrieval (default, recommended for v1.0). (b) bge-small-en-v1.5 via onnxruntime-react-native - 384-dim vectors, ~33 MB ONNX + 250 KB vocab, downloaded on demand.
         </Text>
 
         <View style={{ marginHorizontal: 16, marginBottom: 14, backgroundColor: MEO.card, borderRadius: 14, borderWidth: 1, borderColor: MEO.paperEdge, padding: 14, gap: 10 }}>

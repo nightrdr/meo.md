@@ -1,4 +1,4 @@
-// Pairing.tsx — Device A side of the QR-pairing handover (Agent 9).
+// Pairing.tsx - Device A side of the QR-pairing handover (Agent 9).
 //
 // Opened from File ▸ "New Device…" (Agent 5's `menu://new-device`) on a
 // device that's already signed in. Generates an ephemeral X25519 keypair,
@@ -247,7 +247,7 @@ export function Pairing({ session, onClose }: Props) {
               </button>
             </details>
             <p className="muted small" style={{ marginTop: 12 }}>
-              The new device will need your Secret Key the first time you unlock notes there —
+              The new device will need your Secret Key the first time you unlock notes there -
               keep it handy.
             </p>
           </div>
@@ -312,7 +312,7 @@ export function Pairing({ session, onClose }: Props) {
   );
 }
 
-// Local helper — pairing.ts encodes the QR payload's ek_a_pub as base64;
+// Local helper - pairing.ts encodes the QR payload's ek_a_pub as base64;
 // the handover_create RPC wants raw bytes. (handover_create's wire path
 // converts to PostgREST's hex bytea.)
 function base64ToBytes(s: string): Uint8Array {
@@ -325,6 +325,6 @@ function base64ToBytes(s: string): Uint8Array {
 function humanizePairingError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
   if (/expired/i.test(msg)) return 'That pairing code expired. Try again.';
-  if (/not found/i.test(msg)) return 'Pairing record vanished — try regenerating the code.';
+  if (/not found/i.test(msg)) return 'Pairing record vanished - try regenerating the code.';
   return 'Pairing failed; use your passphrase + Secret Key on the new device instead.';
 }

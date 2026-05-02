@@ -272,7 +272,7 @@ export function Settings({ session, notes, modelId, initialTab = 'ai', onSelectM
             <div className="settings-row">
               <div>
                 <div className="settings-row-label">Model</div>
-                <div className="settings-row-value">{embedderId ?? <span className="muted">not loaded yet — open Ask Meo to load</span>}</div>
+                <div className="settings-row-value">{embedderId ?? <span className="muted">not loaded yet - open Ask Meo to load</span>}</div>
               </div>
             </div>
 
@@ -455,7 +455,7 @@ function CloudModelsSection({ tier }: { tier: Tier }) {
     <section className="settings-section">
       <h2>Cloud models</h2>
       <p className="muted">
-        Bring your own API key. Keys are stored on this device only — never sent to meo.md servers.
+        Bring your own API key. Keys are stored on this device only - never sent to meo.md servers.
       </p>
 
       {(tier === 'business' || tier === 'enterprise') && (

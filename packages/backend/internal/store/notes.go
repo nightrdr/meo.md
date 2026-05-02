@@ -7,7 +7,7 @@ import (
 )
 
 // Note is the on-the-wire encrypted note row. EncryptedContent and
-// Nonce are opaque ciphertext bytes — the server never decrypts them.
+// Nonce are opaque ciphertext bytes - the server never decrypts them.
 type Note struct {
 	ID               string
 	UserID           string
@@ -79,7 +79,7 @@ type UpsertInput struct {
 
 // Upsert performs the create-or-update with HLC last-write-wins
 // semantics. All inside one transaction so the version counter only
-// advances on accepted writes (test #9 depends on this — a stale
+// advances on accepted writes (test #9 depends on this - a stale
 // reject must not consume a version).
 func (s *NoteStore) Upsert(userID string, sync *SyncCursorStore, in UpsertInput) (*Note, error) {
 	tx, err := s.db.Begin()
@@ -225,7 +225,7 @@ func scanNote(s scanner) (*Note, error) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// SyncCursor — per-user monotonic version counter.
+// SyncCursor - per-user monotonic version counter.
 // ──────────────────────────────────────────────────────────────────────
 
 type SyncCursorStore struct{ db *sql.DB }
@@ -242,7 +242,7 @@ type Tx interface {
 // First call for a user returns 1; subsequent calls return 2, 3, ….
 //
 // Note: only called inside the Note* mutators above, after every
-// validation has passed — a stale reject does NOT consume a version.
+// validation has passed - a stale reject does NOT consume a version.
 func (s *SyncCursorStore) Next(tx Tx, userID string) (int64, error) {
 	if tx == nil {
 		tx = s.db

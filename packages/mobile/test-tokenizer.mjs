@@ -1,5 +1,5 @@
 // Smoke-test the WordPiece tokenizer. Uses a tiny synthetic vocab so the
-// test is self-contained — no 250 KB vocab.txt download required to run.
+// test is self-contained - no 250 KB vocab.txt download required to run.
 //
 // Validates: required special tokens, basic-tokenize splitting, greedy
 // longest-prefix wordpiece matching, padding + truncation, [UNK] fallback
@@ -19,7 +19,7 @@ execSync(
 
 const { BertTokenizer } = await import('./test-dist/tokenizer.js');
 
-// Synthetic vocab — ids assigned in line order
+// Synthetic vocab - ids assigned in line order
 const vocab = [
   '[PAD]',          // 0
   '[UNK]',          // 1

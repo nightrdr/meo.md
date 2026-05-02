@@ -1,13 +1,13 @@
--- Agent 9 — enforce per-tier device cap on every note write.
+-- Agent 9 - enforce per-tier device cap on every note write.
 --
 -- Strategy: meo.devices is updated on app cold-start via meo.device_register
 -- (and was already touched by Agent 10's meo.device_seen). The cap is a
 -- *count of distinct devices in the last 30 days*. We enforce it in
 -- meo.upsert_note so a brand-new device past the cap can read its own data
--- but can't push new edits — the client surfaces a friendly modal asking
+-- but can't push new edits - the client surfaces a friendly modal asking
 -- the user to free a device slot first.
 --
--- We *don't* enforce on meo.device_register itself — registering a row past
+-- We *don't* enforce on meo.device_register itself - registering a row past
 -- the cap is fine; the row exists so the user can see it in Settings →
 -- Devices and remove the *other* device. Enforcing here would lock a user
 -- out of even seeing their device list. The Settings UI then explains why

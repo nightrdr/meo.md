@@ -27,7 +27,7 @@ export type EditorMode = 'edit' | 'split' | 'preview';
 export type ExportFormat = 'md' | 'pdf' | 'docx' | 'txt' | 'html';
 
 /**
- * Handlers the native menu can fire. Every field is optional — only
+ * Handlers the native menu can fire. Every field is optional - only
  * wire what you've actually built. The hook is permissive so menu
  * items for features not yet implemented can stay in the menu (and
  * still fire) without forcing App.tsx to provide a no-op for each.
@@ -36,7 +36,7 @@ export interface MenuHandlers {
   // ─── App menu ───
   onAbout?: () => void;
   onSettings?: () => void;
-  // Agent 8 — App ▸ Lock all vault notes. Re-locks every currently-unlocked
+  // Agent 8 - App ▸ Lock all vault notes. Re-locks every currently-unlocked
   // vault note in this session. Invoked from the App menu under Settings…
   // (the spec asks us to coordinate with Agent 5's existing menu structure
   // rather than adding a new top-level menu).
@@ -58,7 +58,7 @@ export interface MenuHandlers {
   onModeChange?: (mode: EditorMode) => void;
   onAskMeo?: () => void;
   // Collapse / expand sections by heading rank (Agent 4). The menu
-  // items are placeholders — Agent 5's macOS menu doesn't ship these
+  // items are placeholders - Agent 5's macOS menu doesn't ship these
   // ids yet, but the handlers are wired here so when it does, the
   // editor will respond. Keyboard shortcuts cover the gap meanwhile.
   onCollapseSection?: () => void;
@@ -105,7 +105,7 @@ type MenuId = (typeof MENU_IDS)[number];
  * to a `console.warn` so unwired features are easy to spot in dev.
  *
  * The handlers object is captured fresh on every render via a ref-
- * less closure — that's fine because the listener wrappers only
+ * less closure - that's fine because the listener wrappers only
  * read `handlers` at call time. We *do* re-subscribe whenever the
  * identity of any handler changes, but in practice App.tsx wraps
  * them with `useCallback` so the listener registration is stable.
@@ -128,7 +128,7 @@ export function useMenuEvents(handlers: MenuHandlers): void {
           }
         } catch (err) {
           // Tauri runtime not present (plain `npm run dev` in a
-          // browser tab). Nothing to do — silently skip.
+          // browser tab). Nothing to do - silently skip.
           // eslint-disable-next-line no-console
           console.debug('[meo] menu listen skipped:', id, err);
         }

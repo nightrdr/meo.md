@@ -1,4 +1,4 @@
--- Agent 9 — Device list (Settings → Devices) + free-tier device cap.
+-- Agent 9 - Device list (Settings → Devices) + free-tier device cap.
 --
 -- Agent 10 already created the bare meo.devices table (user_id, device_id,
 -- last_seen, ua, ip) for the cap probe. This migration:
@@ -9,7 +9,7 @@
 --      Supabase client already routes through `meo`);
 --   3. adds meo.device_register(p_device_id, p_platform, p_name, p_ua) used
 --      on every cold start to upsert the row + bump last_seen;
---   4. adds meo.device_revoke(p_device_id) — explicit "sign out of this
+--   4. adds meo.device_revoke(p_device_id) - explicit "sign out of this
 --      device" called from the UI. We keep RLS DELETE for free-tier hard
 --      cap fallback, but a DEFINER fn lets us also bump the cron-friendly
 --      revoked_at column down the road.
@@ -22,7 +22,7 @@ alter table meo.devices
   add column if not exists name           text not null default 'Unnamed device',
   add column if not exists platform       text not null default 'unknown',
   add column if not exists first_seen_at  timestamptz not null default now();
--- We don't store a server-side `current` flag — "current" is a property
+-- We don't store a server-side `current` flag - "current" is a property
 -- of *the caller's* device id, computed client-side.
 
 -- ── RPC: list this user's devices ──
@@ -75,7 +75,7 @@ begin
           coalesce(p_platform, 'unknown'), p_ua, now(), now())
   on conflict (user_id, device_id) do update set
     last_seen = now(),
-    -- Refresh ua only — name + platform stay sticky once a row is set.
+    -- Refresh ua only - name + platform stay sticky once a row is set.
     ua = coalesce(excluded.ua, meo.devices.ua);
 
   return 'ok';

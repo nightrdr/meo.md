@@ -1,4 +1,4 @@
--- meo.attachments — per spec §2.2 / §3.8.
+-- meo.attachments - per spec §2.2 / §3.8.
 --
 -- The server only ever sees:
 --   * an opaque storage_key (random UUID, no semantic info)
@@ -142,7 +142,7 @@ revoke all on function meo.attachments_for_note(uuid) from public;
 grant execute on function meo.attachments_for_note(uuid) to authenticated;
 
 -- ----------------------------------------------------------------------------
--- Direct table grants — for the fallback cases where the client bypasses the
+-- Direct table grants - for the fallback cases where the client bypasses the
 -- RPC (e.g. selecting a single attachment row by id during download).
 -- RLS still enforces user_id = auth.uid().
 -- ----------------------------------------------------------------------------

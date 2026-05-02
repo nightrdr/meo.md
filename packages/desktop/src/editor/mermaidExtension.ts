@@ -1,4 +1,4 @@
-// Agent 2 — Mermaid diagram block for TipTap.
+// Agent 2 - Mermaid diagram block for TipTap.
 //
 // Approach: a custom Node that mirrors a fenced ```mermaid block in
 // markdown. The node holds the source as plain text content; the
@@ -30,7 +30,7 @@ async function loadMermaid(): Promise<any> {
 }
 
 /**
- * Block-level mermaid node — markdown shape: ```mermaid …```
+ * Block-level mermaid node - markdown shape: ```mermaid …```
  *
  * Stored as `<pre data-meo-mermaid="true"><code>SOURCE</code></pre>`
  * in serialized HTML, but the editor body uses a NodeView so the

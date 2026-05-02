@@ -1,7 +1,7 @@
 // Platform detection + shortcut-display helpers.
 //
 // Tauri runs on macOS (WKWebView), Windows (WebView2), and Linux
-// (WebKitGTK). The keyboard MODIFIER is the same logical key —
+// (WebKitGTK). The keyboard MODIFIER is the same logical key -
 // `event.metaKey || event.ctrlKey` correctly handles Cmd on Mac /
 // Ctrl on Win+Linux when wiring listeners. But the *display* of that
 // modifier in tooltips and badges differs:

@@ -1,4 +1,4 @@
-/* meo.md — warm paper-minimal aesthetic.
+/* meo.md - warm paper-minimal aesthetic.
    Source palette: design-mocks/components/theme.jsx (MEO tokens).
    Light mode is the canonical look; dark mode swaps surface tokens. */
 
@@ -147,7 +147,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 }
 .auth-card .sub a:hover { text-decoration: underline; }
 
-/* OTP code input — large monospaced digits, generous tracking. */
+/* OTP code input - large monospaced digits, generous tracking. */
 .auth-card input.otp-input {
   font-family: var(--font-mono);
   font-size: 22px;
@@ -182,6 +182,54 @@ button, input, textarea, select { font: inherit; color: inherit; }
   font-family: var(--font-mono);
 }
 .auth-card .hint a:hover { text-decoration: underline; }
+
+/* Inline-checkbox row, e.g. "Enable Touch ID for next time" on the
+   unlock screen. The default `.auth-card label` rule gives the small
+   uppercase form-label treatment (right for "PASSPHRASE", wrong for
+   an inline-checkbox row) - override every inherited property. */
+.auth-card label.checkbox-row {
+  display: flex;
+  align-items: center;       /* vertical-center the checkbox with the text */
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink2);
+  cursor: pointer;
+  user-select: none;
+}
+.auth-card label.checkbox-row input[type="checkbox"] {
+  /* Reset every property the generic .auth-card input rule applies
+     (which would stretch the checkbox to 100% width and pad it 10px).
+     Use a 16-pixel native checkbox so its drawn area matches the
+     text's x-height closely under align-items:center. */
+  appearance: auto;          /* keep native checkbox UI */
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  margin: 0;
+  padding: 0;
+  flex: 0 0 16px;
+  accent-color: var(--accent);
+  background: var(--paper);
+  border: none;
+  border-radius: 3px;
+  box-shadow: none;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.auth-card label.checkbox-row span {
+  flex: 1;
+  min-width: 0;
+  /* Match the box's visual midline by using the same line-height as
+     the row, so align-items:center can do its job cleanly. */
+  line-height: 1.4;
+}
 
 .btn {
   font-family: var(--font-sans);
@@ -275,7 +323,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   display: flex; flex-direction: column;
   overflow: hidden;
 }
-/* Sidebar brand: two-row layout — top row has logo + name + actions,
+/* Sidebar brand: two-row layout - top row has logo + name + actions,
    second row has the email truncated to fit the column width. Keeps
    the actions reachable and the email legible at any sidebar width. */
 .sidebar-brand {
@@ -537,7 +585,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 
 .editor-body {
   flex: 1; overflow: auto;
-  /* Edge padding only — the canvas fills the rest of the pane so long
+  /* Edge padding only - the canvas fills the rest of the pane so long
      notes use the available width rather than being squeezed into a
      narrow centered column. */
   padding: 24px 40px;
@@ -557,7 +605,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   font-size: 15px;
 }
 
-/* TipTap content — use serif for body */
+/* TipTap content - use serif for body */
 .ProseMirror {
   outline: none; min-height: 100%;
   font-family: var(--font-serif);
@@ -784,7 +832,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   width: 100px;
 }
 
-/* ─── Editor toolbar — full markdown ────────────────────── */
+/* ─── Editor toolbar - full markdown ────────────────────── */
 
 .editor-toolbar {
   flex-wrap: wrap;
@@ -871,7 +919,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   color: var(--ink); white-space: pre-wrap;
   background: rgba(31,28,23,0.015);
   margin: 0;
-  /* Editable textarea reset — make it look like the old <pre> */
+  /* Editable textarea reset - make it look like the old <pre> */
   border: none; outline: none; resize: none;
   width: 100%;
 }
@@ -973,7 +1021,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 /* ─── Submenu (nested context menu) ─────────────────────── */
 
 .ctx-submenu {
-  /* Override the parent's `.ctx-menu { position: fixed }` is fine —
+  /* Override the parent's `.ctx-menu { position: fixed }` is fine -
      our component sets explicit left/top via inline style. */
   z-index: 210;
 }
@@ -1282,7 +1330,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 
 /* ─── Attachments (Door B) ──────────────────────────────── */
 
-/* Drop zone overlay — fires when files are dragged over the editor body */
+/* Drop zone overlay - fires when files are dragged over the editor body */
 .editor-body.drop-active {
   position: relative;
 }
@@ -1340,7 +1388,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .upload-banner-dismiss:hover { opacity: 1; background: rgba(0, 0, 0, 0.06); }
 @keyframes meo-spin { to { transform: rotate(360deg); } }
 
-/* Inline attachment image renderer — used by AttachmentRenderer.tsx */
+/* Inline attachment image renderer - used by AttachmentRenderer.tsx */
 .att-image-wrap {
   display: inline-block;
   max-width: 100%;
@@ -1581,7 +1629,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .ai-open-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .ai-open-btn .kbd { margin-left: auto; }
 
-/* "Upgrade Meo" banner — shown above Ask Meo for free-tier users only.
+/* "Upgrade Meo" banner - shown above Ask Meo for free-tier users only.
    Uses the accent (green) palette so it doesn't compete with the AI button
    directly below it, but is warm enough to feel inviting rather than naggy. */
 .upgrade-banner {
@@ -2024,7 +2072,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   transform: rotate(0deg);
 }
 
-/* Hidden range — anything wrapped by the inline decoration is gone
+/* Hidden range - anything wrapped by the inline decoration is gone
    from the rendered DOM but still in the document model. */
 .ProseMirror .meo-collapsed-hidden {
   display: none !important;
@@ -2057,7 +2105,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   color: #fff;
 }
 
-/* And in the split-mode source textarea — we wrap matched runs by
+/* And in the split-mode source textarea - we wrap matched runs by
    layering a positioned overlay div behind the textarea. */
 .editor-source-wrap {
   position: relative;
@@ -2181,7 +2229,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
    checkbox inside it. With align-items:flex-start on the <li>, the
    label's top lines up with the text's first-line top, so the
    checkbox ends up visually aligned with the text. Also robust to
-   multi-line task items — the checkbox stays anchored to the first
+   multi-line task items - the checkbox stays anchored to the first
    line. */
 .ProseMirror ul[data-type="taskList"] li > label {
   flex-shrink: 0;
@@ -2207,7 +2255,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   cursor: pointer;
 }
 
-/* ─── About modal (Agent 5 — opened from the App menu) ─── */
+/* ─── About modal (Agent 5 - opened from the App menu) ─── */
 
 .modal-backdrop {
   position: fixed; inset: 0;
@@ -2242,7 +2290,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .about-link:hover { text-decoration: underline; }
 .about-modal .btn { margin-top: 14px; min-width: 88px; }
 
-/* ─── QR-pairing modal (Agent 9 — File ▸ New Device…) ─── */
+/* ─── QR-pairing modal (Agent 9 - File ▸ New Device…) ─── */
 
 .pairing-modal {
   width: 380px;
@@ -2425,7 +2473,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   border-radius: 6px;
 }
 
-/* ─── Agent 6 — dictation, media insert, tier-aware upload ─── */
+/* ─── Agent 6 - dictation, media insert, tier-aware upload ─── */
 
 /* Live dictation partial transcript: dotted underline, slight ghosting. */
 .meo-dictation-partial {
@@ -2436,7 +2484,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   font-style: italic;
 }
 
-/* Toolbar mic button — re-uses the existing toolbar btn styling but adds
+/* Toolbar mic button - re-uses the existing toolbar btn styling but adds
    a recording state (red dot + soft glow). */
 .dictation-btn {
   position: relative;
@@ -2494,7 +2542,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 }
 audio.att-media { width: 100%; }
 
-/* Upload-banner upgrade button — surfaced when the file is too large for
+/* Upload-banner upgrade button - surfaced when the file is too large for
    the user's tier. Sits next to the dismiss X. */
 .upload-banner-upgrade {
   margin-left: 8px;

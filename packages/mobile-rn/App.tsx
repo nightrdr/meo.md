@@ -1,4 +1,4 @@
-// Root navigator — tiny state machine, no react-navigation in v1.
+// Root navigator - tiny state machine, no react-navigation in v1.
 //
 // We have at most 4 screens (auth → list ↔ note, list ↔ settings),
 // so a useState discriminated union keeps the dependency tree small

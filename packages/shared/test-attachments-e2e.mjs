@@ -127,7 +127,7 @@ console.log('   row:', psqlOut.trim());
 assert.ok(!psqlOut.includes('tiny-secret'), 'filename leaked into row plaintext!');
 assert.ok(psqlOut.includes(uploadRes.id), 'row was not found at all');
 
-console.log('7. inspect storage bytes — must NOT equal the PNG');
+console.log('7. inspect storage bytes - must NOT equal the PNG');
 //  The download URL is a presigned GET we already used in step 5; ask for a
 //  fresh one purely to dump raw bytes for inspection.
 const rawResp = await fetch(`${FUNCTIONS_URL}/attachments-download-url`, {
@@ -141,12 +141,12 @@ const rawGet = await fetch(meta.url);
 assert.ok(rawGet.ok, `presigned GET returned ${rawGet.status}`);
 const stored = new Uint8Array(await rawGet.arrayBuffer());
 assert.equal(stored.length, uploadRes.encrypted_size);
-// PNG signature is 89 50 4E 47 0D 0A 1A 0A — the ciphertext must NOT start with that.
+// PNG signature is 89 50 4E 47 0D 0A 1A 0A - the ciphertext must NOT start with that.
 const pngSig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 let differsAtSig = false;
 for (let i = 0; i < pngSig.length; i++) {
   if (stored[i] !== pngSig[i]) { differsAtSig = true; break; }
 }
-assert.ok(differsAtSig, 'storage bytes start with the PNG signature — encryption did not happen!');
+assert.ok(differsAtSig, 'storage bytes start with the PNG signature - encryption did not happen!');
 
 console.log('\nAll attachment e2e tests passed.');

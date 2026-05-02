@@ -1,4 +1,4 @@
-// Authentication UI — email-OTP flow.
+// Authentication UI - email-OTP flow.
 //
 // Modes (linear progression, no back-step needed since each gates the next):
 //
@@ -17,7 +17,7 @@
 //               biometric re-enrollment).
 //
 // Crypto note: OTP only authenticates the *account* (yields a JWT for
-// the server). The encryption layer is independent — passphrase + Secret
+// the server). The encryption layer is independent - passphrase + Secret
 // Key are still required to derive the master key. The server never
 // sees either.
 
@@ -90,12 +90,12 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
     biometricAvailable().then(setBiometricShown).catch(() => setBiometricShown(false));
   }, []);
 
-  // Stable api instance across renders — supabase-js holds session state.
+  // Stable api instance across renders - supabase-js holds session state.
   const apiRef = useRef<ReturnType<typeof makeApiClient> | null>(null);
   if (!apiRef.current) apiRef.current = makeApiClient();
   const api = apiRef.current;
 
-  // ── Centralized error handler — turns any thrown API/auth/network
+  // ── Centralized error handler - turns any thrown API/auth/network
   //    error into the most helpful sentence we can manage. ──
   function handleErr(e: unknown) {
     setError(humanizeAuthError(e));
@@ -172,7 +172,7 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
   // we're running on a platform that supports it, we wrap masterRaw
   // with a fresh per-device wrap_key, persist the ciphertext blob in
   // IndexedDB, and stash the wrap_key in the OS keychain behind the
-  // userPresence ACL. Failures here are non-fatal — the user has a
+  // userPresence ACL. Failures here are non-fatal - the user has a
   // valid session, biometric is just convenience.
   async function handleUnlock(e: React.FormEvent) {
     e.preventDefault();
@@ -201,7 +201,7 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
           });
           // saveWrapKey triggers the OS biometric-setup prompt on
           // macOS ("Allow Meo to use Touch ID"). Failures here mean
-          // the user denied permission — flip the flag back off so
+          // the user denied permission - flip the flag back off so
           // the next cold start doesn't show the biometric screen.
           await saveWrapKey(keyB64);
         } catch (e) {
@@ -214,7 +214,7 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
           });
         }
       } else {
-        // User explicitly opted out — make sure no stale blob remains
+        // User explicitly opted out - make sure no stale blob remains
         // from a previous session.
         await setMeta({
           master_wrap_blob: undefined,
@@ -225,7 +225,7 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
       }
       onAuthenticated(session);
     } catch {
-      handleErr(new Error('Couldn\'t unlock — check your passphrase and Secret Key.'));
+      handleErr(new Error('Couldn\'t unlock - check your passphrase and Secret Key.'));
     }
     setBusy(false);
   }
@@ -240,7 +240,7 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
     try {
       const meta = await getMeta();
       if (!meta.jwt || !meta.user_id || !meta.master_wrap_blob || !meta.master_wrap_nonce) {
-        throw new Error('Quick-unlock data missing — please use your passphrase.');
+        throw new Error('Quick-unlock data missing - please use your passphrase.');
       }
       const keyB64 = await loadWrapKey();
       const masterRaw = await unwrapMasterRaw(keyB64, meta.master_wrap_blob, meta.master_wrap_nonce);
@@ -261,7 +261,7 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
       // entries (e.g. user wiped the keychain or re-enrolled Touch
       // ID). We surface a short message and let them retry or fall
       // back. We don't auto-route because cancellation should NOT
-      // force a passphrase entry — the user might just have hit Esc
+      // force a passphrase entry - the user might just have hit Esc
       // by accident.
       const msg = (e as Error).message ?? '';
       if (/cancel|denied/i.test(msg)) {
@@ -275,7 +275,7 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
 
   // Auto-trigger the OS prompt the moment we land on the biometric
   // screen. The user shouldn't have to click a button to "request the
-  // prompt that asks them to authenticate" — that's a redundant step.
+  // prompt that asks them to authenticate" - that's a redundant step.
   // If they Esc / cancel, the button is still there for retry.
   useEffect(() => {
     if (mode === 'biometric') {
@@ -445,7 +445,7 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
             <h1>Pair from existing device</h1>
             <p className="sub">
               On your other device, open <b>File ▸ New Device…</b>. It'll show a QR code
-              and a copyable text fallback. Paste that text below and we'll do the rest —
+              and a copyable text fallback. Paste that text below and we'll do the rest -
               no passphrase needed.
             </p>
             <form onSubmit={handlePair}>
@@ -617,13 +617,7 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
                 autoComplete="off"
               />
               {biometricShown && (
-                <label
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    fontWeight: 'normal', marginTop: 8, color: 'var(--ink2)',
-                    cursor: 'pointer',
-                  }}
-                >
+                <label className="checkbox-row">
                   <input
                     type="checkbox"
                     checked={biometricOptIn}
@@ -703,7 +697,7 @@ function sleep(ms: number): Promise<void> {
 
 function humanizePairingError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
-  if (/expired/i.test(msg)) return 'That pairing code expired — generate a new one on your other device.';
+  if (/expired/i.test(msg)) return 'That pairing code expired - generate a new one on your other device.';
   if (/timed out/i.test(msg)) return 'Pairing timed out. Try again.';
   if (/Invalid QR/i.test(msg) || /Unexpected token/i.test(msg) || /JSON/i.test(msg))
     return 'That pairing code didn\'t parse. Make sure you copied the entire string.';

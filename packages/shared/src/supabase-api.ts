@@ -8,7 +8,7 @@
 //   - Notes upsert: meo.upsert_note RPC (atomic version bump + HLC check)
 //   - Notes delete: meo.delete_note RPC (tombstone + version bump)
 //
-// All blob columns (bytea) round-trip via base64 — same as the Hono backend.
+// All blob columns (bytea) round-trip via base64 - same as the Hono backend.
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type {
@@ -28,7 +28,7 @@ export interface DeviceRow {
   last_seen: string;
 }
 
-// ── Handovers (Agent 9) — see packages/shared/src/pairing.ts ──
+// ── Handovers (Agent 9) - see packages/shared/src/pairing.ts ──
 export interface HandoverRow {
   ek_a_pub: Uint8Array | null;
   ek_b_pub: Uint8Array | null;
@@ -84,7 +84,7 @@ export class SupabaseApiClient {
     return { user_id: data.user.id };
   }
 
-  /** Password login — same caveat as signup() above. */
+  /** Password login - same caveat as signup() above. */
   async login(email: string, password: string): Promise<AuthLoginResponse> {
     const { data, error } = await this.sb.auth.signInWithPassword({ email, password });
     if (error) throw new ApiError(error.status ?? 401, { error: error.message, code: (error as any).code });
@@ -96,7 +96,7 @@ export class SupabaseApiClient {
    * Step 1 of the email-OTP flow. Sends a 6-digit code to `email` via
    * GoTrue's signInWithOtp. `shouldCreateUser: true` (the GoTrue
    * default) means new emails are signed up implicitly on the first
-   * verifyEmailOtp — there is no separate signup step.
+   * verifyEmailOtp - there is no separate signup step.
    *
    * Returns silently on success; throws an ApiError with a useful
    * message on rate-limiting, invalid email, or disabled email auth.
@@ -106,7 +106,7 @@ export class SupabaseApiClient {
       email,
       options: {
         shouldCreateUser: true,
-        // Force OTP-style code rather than magic link — the desktop UI
+        // Force OTP-style code rather than magic link - the desktop UI
         // wants the user to type 6 digits, not click a URL that would
         // open in their default browser.
         emailRedirectTo: undefined,
@@ -148,7 +148,7 @@ export class SupabaseApiClient {
 
   async getAccount(): Promise<AccountWrapper> {
     if (!this.userId) {
-      // try to recover from JWT — sb.auth.getUser handles it
+      // try to recover from JWT - sb.auth.getUser handles it
       const { data, error } = await this.sb.auth.getUser(this.jwt);
       if (error || !data.user) throw new ApiError(401, { error: 'not authenticated' });
       this.userId = data.user.id;
@@ -432,9 +432,9 @@ function mapPgError(error: { code?: string; message?: string }): ApiError {
   //   28000 = unauthorized (raised when auth.uid() is null)
   //   P0002 = not found (raised in delete_note)
   //   23505 = unique_violation (account already exists)
-  //   P0007 = attachment_too_large (Agent 6 — file > tier max)
-  //   P0008 = storage_cap_exceeded (Agent 6 — workspace > tier total)
-  //   P0009 = device_cap_exceeded (Agent 9 — too many devices)
+  //   P0007 = attachment_too_large (Agent 6 - file > tier max)
+  //   P0008 = storage_cap_exceeded (Agent 6 - workspace > tier total)
+  //   P0009 = device_cap_exceeded (Agent 9 - too many devices)
   if (code === '40001' || msg.includes('stale write')) return new ApiError(409, { error: msg });
   if (code === 'P0007' || msg.includes('attachment_too_large')) {
     return new ApiError(413, { error: 'attachment_too_large', code: 'attachment_too_large' });

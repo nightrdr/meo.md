@@ -4,7 +4,7 @@
 // that opens whichever portal owns the subscription:
 //   - Paddle:     external Paddle customer portal in a new tab.
 //   - RevenueCat: tells the user to use the App Store / Play Store on their
-//                 phone — neither store offers a usable web management UI for
+//                 phone - neither store offers a usable web management UI for
 //                 third-party apps. We don't try to deep-link.
 //   - Manual / no source: show the upgrade options inline.
 //
@@ -59,7 +59,7 @@ export function Subscription({ session }: Props) {
   const [tfaEnabled, setTfaEnabled] = useState<boolean | null>(null);
   const [usage, setUsage] = useState<StorageUsage | null>(null);
 
-  // Load storage usage (Agent 6 — usage bar). Refreshes on tier change so
+  // Load storage usage (Agent 6 - usage bar). Refreshes on tier change so
   // the bar reflects the new cap immediately after upgrade.
   useEffect(() => {
     let alive = true;
@@ -204,7 +204,7 @@ export function Subscription({ session }: Props) {
         )}
       </section>
 
-      {/* Manage / upgrade controls — branch on source. */}
+      {/* Manage / upgrade controls - branch on source. */}
       <section className="settings-section">
         <h2>Manage</h2>
 
@@ -321,7 +321,7 @@ function UpgradeTierCard({ name, price, blurb, cta, highlight, onClick }: Upgrad
   );
 }
 
-// Storage usage bar (Agent 6 §3) — fills proportionally to total / cap.
+// Storage usage bar (Agent 6 §3) - fills proportionally to total / cap.
 // Switches color when the user is in the "warn" or "over" zones so they
 // see they're approaching their limit before saves start failing.
 function StorageUsageBar({ usage }: { usage: StorageUsage }) {

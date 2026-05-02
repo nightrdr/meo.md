@@ -21,3 +21,6 @@ supabase/.env
 test-dist/
 export-test/
 .claude/
+
+# Hosted GGUF / ONNX model files - large, fetched via scripts/seed-models.sh
+packages/backend/models/

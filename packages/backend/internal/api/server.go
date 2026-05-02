@@ -12,7 +12,7 @@ import (
 )
 
 // Server is the composition root for the HTTP layer. All deps are
-// fields injected via NewServer — no package globals, no init().
+// fields injected via NewServer - no package globals, no init().
 //
 // Each handler method takes (c *gin.Context) and uses s.<dep> to do
 // its work, so a test can construct a Server with fake stores +
@@ -46,7 +46,7 @@ func NewServer(
 }
 
 // WithModels attaches the model-download subsystem. Pass nil for the
-// store if the directory couldn't be created — the routes will return
+// store if the directory couldn't be created - the routes will return
 // 503 instead of 500.
 func (s *Server) WithModels(catalogue *models.Catalogue, store *models.Store, adminToken string) *Server {
 	s.models = catalogue

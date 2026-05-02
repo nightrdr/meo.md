@@ -5,13 +5,13 @@
 // "Configure" entry point in Settings → Subscription always lands users
 // on enrollment first.
 //
-//   <TFAEnroll>  — first-time setup. Calls /functions/v1/tfa-enroll which
+//   <TFAEnroll>  - first-time setup. Calls /functions/v1/tfa-enroll which
 //                  generates a fresh 20-byte secret, stores it server-side
 //                  encrypted with TFA_KEK, and returns an otpauth URL
 //                  (`otpauth://totp/meo.md:<email>?secret=<b32>&issuer=meo.md`).
 //                  We render a QR code locally so the secret never leaves
 //                  the device round-trip.
-//   <TFAVerify>  — cold-start gate. Modal that intercepts between OTP and
+//   <TFAVerify>  - cold-start gate. Modal that intercepts between OTP and
 //                  unlock when `tfa_status() === true`. On success, sets
 //                  the X-MEO-TFA-Token header for the rest of the session.
 //
@@ -139,7 +139,7 @@ interface VerifyProps {
 /**
  * Modal shown between the OTP-verify auth step and the master-key unlock
  * screen, when the user is on Business+ tier *and* tfa_enabled is true.
- * We don't expose a "skip" — the spec explicitly says "required everytime
+ * We don't expose a "skip" - the spec explicitly says "required everytime
  * they open the app". The user's only out is signing out.
  */
 export function TFAVerify({ session, onVerified }: VerifyProps) {
@@ -213,7 +213,7 @@ export async function shouldGateTfa(session: Session, tier: Tier): Promise<boole
 // the otpauth URL using the public Google Charts QR endpoint via an
 // <img>. That's a network round-trip, so we also offer the secret in
 // plaintext as a fallback for users who don't want to call out to
-// Google. Callers should treat this as a known punt — see "Files" in the
+// Google. Callers should treat this as a known punt - see "Files" in the
 // agent-8 reporting block at the top of the chat.
 function QRCode({ text, size }: { text: string; size: number }) {
   const url = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(text)}`;

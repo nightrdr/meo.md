@@ -1,6 +1,6 @@
-.PHONY: dev build test e2e clean docker docker-run docker-e2e compose-up compose-down
+.PHONY: dev build test e2e clean docker docker-run docker-e2e compose-up compose-down seed-models seed-models-small
 
-# Default target — fast iteration during development. No autoreload
+# Default target - fast iteration during development. No autoreload
 # binary; restart by hand on save (it's <1s on this hardware).
 dev:
 	go run ./cmd/server
@@ -14,7 +14,7 @@ build:
 test:
 	go test ./...
 
-# End-to-end smoke test — starts the server, runs the existing
+# End-to-end smoke test - starts the server, runs the existing
 # language-agnostic JS suite against it, then tears the server down.
 # Requires `node` on PATH and `packages/shared/dist` already built.
 e2e: build
@@ -32,7 +32,7 @@ e2e: build
 docker:
 	docker build -t meo-backend:latest -f Dockerfile .
 
-# Run the image with a per-process random JWT secret (dev only — for
+# Run the image with a per-process random JWT secret (dev only - for
 # prod, supply your own via -e JWT_SECRET=…).
 docker-run: docker
 	docker run --rm -p 8787:8787 \
@@ -58,6 +58,16 @@ compose-up:
 
 compose-down:
 	docker compose down
+
+# Populate models/ with files listed in internal/models/manifest.json.
+# Without an arg: pulls everything (~13 GB). With "small": just the
+# 33 MB bge-small embedder. With "qwen" / "llama" / "phi": just that
+# family. See scripts/seed-models.sh for the URL list.
+seed-models:
+	./scripts/seed-models.sh
+
+seed-models-small:
+	./scripts/seed-models.sh small
 
 clean:
 	rm -rf bin meo-e2e.sqlite*

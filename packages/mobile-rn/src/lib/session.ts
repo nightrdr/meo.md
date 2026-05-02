@@ -3,7 +3,7 @@
 // Notes list → Note view → Settings) can all read/write the same
 // master key, JWT, and decrypted notes map without prop-drilling.
 //
-// We deliberately do NOT persist masterRaw to AsyncStorage — even
+// We deliberately do NOT persist masterRaw to AsyncStorage - even
 // react-native-keychain (which uses iOS Keychain / Android Keystore)
 // is reserved for the biometric story (Agent 1's mobile follow-up).
 // For the MVP scaffold the user re-enters passphrase + Secret Key
@@ -45,13 +45,13 @@ export function getCurrentTier(s: Session | null | undefined): Tier {
   return s?.subscription?.tier ?? 'free';
 }
 
-// Supabase URL + anon key — sourced from env at build time. For local
+// Supabase URL + anon key - sourced from env at build time. For local
 // dev we fall back to the standard Supabase CLI defaults so a fresh
 // `npm run macos` pointed at a default dev stack just works.
 //
 // In production these MUST be replaced with the deployed values via
 // react-native-dotenv or `Config.SUPABASE_URL` (react-native-config).
-// We deliberately don't pull in another dep for the scaffold — the
+// We deliberately don't pull in another dep for the scaffold - the
 // follow-on agent can pick whichever .env strategy fits CI.
 declare const process: { env: Record<string, string | undefined> };
 export const SUPABASE_URL =
@@ -70,7 +70,7 @@ export function makeApiClient(jwt?: string): SupabaseApiClient {
 
 /**
  * Fetch every undeleted note row, decrypt with the session's master key,
- * and stash in `session.notes`. Read-only — there's no upsert path in
+ * and stash in `session.notes`. Read-only - there's no upsert path in
  * v1 of the RN shell. Returns the count loaded.
  */
 export async function loadNotes(session: Session): Promise<number> {

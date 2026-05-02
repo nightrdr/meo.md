@@ -3,7 +3,7 @@
 // Lists meo.devices for the current user, plus a "Sign out" button per
 // row that deletes the device record. The current device is marked
 // "This device" and cannot be revoked from this UI (use the sidebar's
-// sign-out button — that wipes local state in addition to the row).
+// sign-out button - that wipes local state in addition to the row).
 //
 // Free-tier users with > 1 device see a callout explaining the cap.
 // Hobbyist with > 3 ditto. Business / Enterprise have no cap.
@@ -62,7 +62,7 @@ export function Devices({ session }: Props) {
   const overCap = rows ? rows.length > cap : false;
 
   const onRevoke = useCallback(async (id: string, label: string) => {
-    if (id === thisDeviceId) return;          // safety — UI already disables this
+    if (id === thisDeviceId) return;          // safety - UI already disables this
     if (!confirm(`Sign out of "${label}"? It will need to re-pair to access notes again.`)) return;
     if (!(session.api instanceof SupabaseApiClient)) return;
     setBusy(true);
@@ -113,7 +113,7 @@ export function Devices({ session }: Props) {
         {!rows && <p className="muted">Loading devices…</p>}
 
         {rows && rows.length === 0 && (
-          <p className="muted">No devices yet — your current session will appear here on next sync.</p>
+          <p className="muted">No devices yet - your current session will appear here on next sync.</p>
         )}
 
         {rows && rows.length > 0 && (

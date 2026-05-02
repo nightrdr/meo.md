@@ -1,6 +1,6 @@
 // Mobile variant of attachments.ts. Uses @noble/ciphers + @noble/hashes
 // because RN's Hermes doesn't ship crypto.subtle. Wire format and Edge
-// Function contract are identical to packages/shared/src/attachments.ts —
+// Function contract are identical to packages/shared/src/attachments.ts -
 // a file uploaded from desktop downloads cleanly on mobile and vice versa.
 
 import { gcm } from '@noble/ciphers/aes';
@@ -14,7 +14,7 @@ import type {
   AttachmentMetadata, AttachmentSummary,
 } from './types';
 
-// Constants — keep in sync with packages/shared/src/attachments.ts and the migration.
+// Constants - keep in sync with packages/shared/src/attachments.ts and the migration.
 export const CHUNK_SIZE = 1024 * 1024;
 export const GCM_TAG_BYTES = 16;
 export const NONCE_BASE_BYTES = 8;
@@ -35,7 +35,7 @@ function deriveAttachmentKey(masterRaw: Uint8Array, attachmentId: string): Uint8
 }
 
 // ----------------------------------------------------------------------------
-// Streaming AES-GCM encrypt / decrypt — chunked
+// Streaming AES-GCM encrypt / decrypt - chunked
 // ----------------------------------------------------------------------------
 
 function chunkNonce(nonceBase: Uint8Array, chunkIndex: number): Uint8Array {
@@ -111,7 +111,7 @@ function sha256Hex(bytes: Uint8Array): string {
 }
 
 // ----------------------------------------------------------------------------
-// Public API — mirrors packages/shared/src/attachments.ts
+// Public API - mirrors packages/shared/src/attachments.ts
 // ----------------------------------------------------------------------------
 
 export interface UploadInput {

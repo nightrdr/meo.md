@@ -8,7 +8,7 @@ import type { AccountWrapper, Note } from './types.js';
 // encryption runs), and is detected by `decryptNote` to peel back the inner
 // AES-GCM layer when a vault key is supplied. Format:
 //   vault:<base64-nonce>:<base64-ct>
-// The colon-separated layout is intentional — `:` never appears inside a
+// The colon-separated layout is intentional - `:` never appears inside a
 // base64 alphabet, so a single split() recovers the parts unambiguously.
 export const VAULT_BODY_PREFIX = 'vault:';
 
@@ -116,7 +116,7 @@ export async function derivePerNoteKey(masterRaw: Uint8Array, noteId: string): P
 // ---------------------------------------------------------------------------
 // Vault key (Agent 8). A second key derived from the master key, scoped to a
 // user. Used to wrap the *body* of vault-flagged notes before the outer
-// per-note encryption runs — so an attacker who somehow grabs `masterRaw` from
+// per-note encryption runs - so an attacker who somehow grabs `masterRaw` from
 // memory still can't read vault bodies without the vault key.
 //
 // Derivation:   vault_key = HKDF-SHA256(masterRaw, salt=utf8(user_id), info='vault:v1', length=32)
@@ -172,7 +172,7 @@ export async function decryptVaultBody(
  * wire-form string: `vault:<b64-nonce>:<b64-ct>` if a vaultKey is provided
  * and `note.isVault === true`, otherwise the body unchanged.
  *
- * Idempotent — if `body` already starts with the vault marker we leave it
+ * Idempotent - if `body` already starts with the vault marker we leave it
  * alone. Saving a vault note that's currently locked (no vaultKey in scope)
  * therefore keeps the original ciphertext intact.
  */
@@ -186,7 +186,7 @@ async function maybeWrapVaultBody(note: Note, vaultKey: CryptoKey | undefined): 
 
 /**
  * Detect a vault marker on a body string and try to peel it. If `vaultKey`
- * is missing we leave the marker in place — the UI is expected to render a
+ * is missing we leave the marker in place - the UI is expected to render a
  * locked placeholder until the user unlocks. Throws on malformed markers
  * so a corrupt blob surfaces loudly instead of silently looking unlocked.
  */
@@ -209,8 +209,8 @@ export async function encryptNote(
   const key = await derivePerNoteKey(masterRaw, note.id);
   const nonce = generateNonce();
   // Wrap the body for vault notes (no-op for normal notes). We mutate the
-  // body field inline — `note` is the caller's snapshot, never the live
-  // object — and serialise the rest of the JSON unchanged.
+  // body field inline - `note` is the caller's snapshot, never the live
+  // object - and serialise the rest of the JSON unchanged.
   const wrappedBody = await maybeWrapVaultBody(note, vaultKey);
   const wireNote: Note = wrappedBody === note.body ? note : { ...note, body: wrappedBody };
   const plaintext = utf8Encode(JSON.stringify(wireNote));
@@ -229,7 +229,7 @@ export async function decryptNote(
   const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: nonce }, key, ciphertext);
   const note = JSON.parse(utf8Decode(new Uint8Array(pt))) as Note;
   // Best-effort vault unwrap. A vault note encountered without a vault key
-  // keeps its `vault:...` marker — the UI sees this and renders the locked
+  // keeps its `vault:...` marker - the UI sees this and renders the locked
   // preview without ever touching plaintext.
   if (note.body && note.body.startsWith(VAULT_BODY_PREFIX)) {
     note.body = await maybeUnwrapVaultBody(note.body, vaultKey);

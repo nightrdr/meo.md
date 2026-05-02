@@ -9,7 +9,7 @@
 //   2. Call configureRevenueCat(userId) right after a successful
 //      unlockAccount() / setupNewAccount() in the auth screen.
 //
-// Until then the function is a no-op stub — Purchases.configure with
+// Until then the function is a no-op stub - Purchases.configure with
 // a placeholder key would throw at runtime, so we guard on the
 // presence of an actual key. See the README's "Phase 2" section.
 
@@ -24,7 +24,7 @@ const ANDROID_KEY =
 export async function configureRevenueCat(userId: string): Promise<void> {
   const key = Platform.OS === 'ios' ? IOS_KEY : ANDROID_KEY;
   if (!key) {
-    // Scaffold mode — log and return. Don't crash.
+    // Scaffold mode - log and return. Don't crash.
     console.log('[RevenueCat] skipped: no API key configured (scaffold)');
     return;
   }

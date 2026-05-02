@@ -77,7 +77,7 @@ export async function ragAsk(args: RagAskArgs): Promise<RagAskResult> {
 
 function buildContextBlock(chunks: RetrievedChunk[]): string {
   if (chunks.length === 0) {
-    return 'CONTEXT: (none — no relevant notes were retrieved.)';
+    return 'CONTEXT: (none - no relevant notes were retrieved.)';
   }
   const blocks = chunks.map(c => `[note:${c.noteId}] ${c.title}\n${c.snippet}`);
   return `CONTEXT:\n\n${blocks.join('\n\n---\n\n')}`;

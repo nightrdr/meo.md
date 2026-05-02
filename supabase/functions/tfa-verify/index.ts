@@ -1,4 +1,4 @@
-// tfa-verify — Agent 8.
+// tfa-verify - Agent 8.
 //
 // Validates a 6-digit TOTP against the caller's stored secret. On success,
 // mints a short-lived session-bound token (5 min) the client sends as the
@@ -9,7 +9,7 @@
 //   where hmac = HMAC-SHA256(TFA_KEK || ':sess:', `${user_id}:${expires_at_unix}`)
 //
 // Server-side middleware that gates Business+ traffic can rebuild the HMAC
-// and check it. We're not minting a JWT (no RS256 keypair to manage) — the
+// and check it. We're not minting a JWT (no RS256 keypair to manage) - the
 // HMAC is fine for a 5-minute window scoped to a single env-var secret.
 //
 // Local dev:

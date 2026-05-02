@@ -48,6 +48,6 @@
     "node": ">=20"
   },
   "comments": {
-    "react-native-macos": "Pulled in via npx react-native-macos-init after npm install — see README. Not listed as a direct dep because the macOS init pulls a matching version itself and writes the macos/ folder."
+    "react-native-macos": "Pulled in via npx react-native-macos-init after npm install - see README. Not listed as a direct dep because the macOS init pulls a matching version itself and writes the macos/ folder."
   }
 }

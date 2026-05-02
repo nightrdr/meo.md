@@ -31,7 +31,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // We deliberately exclude the `ai/` subtree because its mobile-only modules
 // (llamaRn, foundation, vectorStore.sqlite) pull in RN-specific deps
 // (expo-file-system, op-sqlite) that don't resolve under plain Node. This
-// test's scope is crypto + API interop, not AI — that's tested elsewhere.
+// test's scope is crypto + API interop, not AI - that's tested elsewhere.
 const sources = execSync(`find src/shared -name '*.ts' -not -name '*.d.ts' -not -path '*/ai/*'`, { cwd: __dirname })
   .toString().trim().split('\n').filter(Boolean);
 execSync(
@@ -51,7 +51,7 @@ function walk(dir) {
 
 for (const p of walk(path.join(__dirname, 'test-dist'))) {
   let s = fs.readFileSync(p, 'utf8');
-  // Add .js to relative imports — both ./ and ../ — that don't already have it.
+  // Add .js to relative imports - both ./ and ../ - that don't already have it.
   s = s.replace(/from ['"](\.\.?\/[^'"]+)['"]/g, (_m, spec) =>
     spec.endsWith('.js') ? `from '${spec}'` : `from '${spec}.js'`,
   );

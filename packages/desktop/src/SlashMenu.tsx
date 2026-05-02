@@ -186,7 +186,7 @@ export function SlashMenu({ editor, note, modelId, notes, onUpdate }: Props) {
         }
         onUpdate({ ...note, body: buf.trim() });
       } else {
-        // Insert mode — stream into the editor
+        // Insert mode - stream into the editor
         editor.chain().focus().insertContent('\n\n').run();
         for await (const c of stream) {
           if (c.delta) {

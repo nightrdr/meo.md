@@ -23,7 +23,7 @@
 //
 // Security notes:
 //   - The handover_id is the bearer token for *the row*, but it is also
-//     the HKDF salt — so an attacker who only has the QR (id + ek_a_pub)
+//     the HKDF salt - so an attacker who only has the QR (id + ek_a_pub)
 //     can't derive pair_key without one of the private keys.
 //   - 60-second TTL on the row + 32 random bytes of UUID entropy makes
 //     a real-time MITM the only viable attack, and it requires either
@@ -32,7 +32,7 @@
 //     scan / paste fails, the user sees "Pairing failed" and is
 //     redirected to the passphrase + Secret Key flow.
 
-// We don't import any node-only libs here — everything runs in the
+// We don't import any node-only libs here - everything runs in the
 // renderer (desktop + mobile webview). tweetnacl is the only dep and
 // it's universal.
 
@@ -212,14 +212,14 @@ export function encodeQr(payload: HandoverQrPayload): string {
 
 export function decodeQr(s: string): HandoverQrPayload {
   const trimmed = s.trim();
-  // Forgive a "meo://pair?p=…" wrapper — future-proofs us if we ever
+  // Forgive a "meo://pair?p=…" wrapper - future-proofs us if we ever
   // generate a tap-to-open scheme.
   const m = trimmed.match(/[?&]p=([^&]+)/);
   const raw = m ? m[1] : trimmed;
   const json = new TextDecoder().decode(decodeBase64(raw));
   const obj = JSON.parse(json);
   if (obj?.v !== 1 || typeof obj.ek_a_pub !== 'string' || typeof obj.handover_id !== 'string') {
-    throw new Error('Invalid QR payload — wrong version or missing fields.');
+    throw new Error('Invalid QR payload - wrong version or missing fields.');
   }
   if (typeof obj.expires_at === 'number' && obj.expires_at < Date.now()) {
     throw new Error('That QR code has expired. Generate a new one.');

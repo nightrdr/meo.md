@@ -72,7 +72,7 @@ export async function downloadModel(
   if (!res.ok) {
     let detail = '';
     try { detail = (await res.json())?.error ?? ''; } catch { /* non-JSON body */ }
-    throw new Error(`download ${entry.id}: ${res.status}${detail ? ` — ${detail}` : ''}`);
+    throw new Error(`download ${entry.id}: ${res.status}${detail ? ` - ${detail}` : ''}`);
   }
   if (!res.body) throw new Error(`download ${entry.id}: response has no body`);
 

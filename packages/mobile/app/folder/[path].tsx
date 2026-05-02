@@ -83,7 +83,7 @@ export default function FolderScreen() {
 
   const onFolderActions = () => {
     if (!isReal) {
-      Alert.alert('System view', 'This is a system view (All / Recent / Tag) — only real folders can be renamed or deleted.');
+      Alert.alert('System view', 'This is a system view (All / Recent / Tag) - only real folders can be renamed or deleted.');
       return;
     }
     setActionSheet({

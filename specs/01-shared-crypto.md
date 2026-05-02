@@ -1,4 +1,4 @@
-# Shared package — crypto, types, API client
+# Shared package - crypto, types, API client
 
 TypeScript package shared by backend (for type defs only) and the desktop +
 mobile clients (for crypto + API). The desktop and mobile clients import it
@@ -26,16 +26,16 @@ per_note_key + note_plaintext (CBOR/JSON)
 ```
 
 ### Public functions
-- `generateSecretKey(): Uint8Array` — 16 random bytes (128-bit).
-- `formatSecretKey(bytes): string` — group into 5-char chunks for display.
-- `parseSecretKey(string): Uint8Array` — strict parse, throws on bad input.
+- `generateSecretKey(): Uint8Array` - 16 random bytes (128-bit).
+- `formatSecretKey(bytes): string` - group into 5-char chunks for display.
+- `parseSecretKey(string): Uint8Array` - strict parse, throws on bad input.
 - `deriveUnlockKey(passphrase, secretKey, salt): CryptoKey`
 - `wrapMasterKey(masterKey, unlockKey): { ciphertext, nonce }`
 - `unwrapMasterKey(ciphertext, nonce, unlockKey): CryptoKey`
 - `derivePerNoteKey(masterKey, noteId): CryptoKey`
 - `encryptNote(note, masterKey): { ciphertext, nonce }`
 - `decryptNote(ciphertext, nonce, noteId, masterKey): Note`
-- `generateMasterKey(): CryptoKey` — for new accounts at signup.
+- `generateMasterKey(): CryptoKey` - for new accounts at signup.
 
 ### Note plaintext format
 JSON (CBOR is a v2 optimization):
@@ -65,7 +65,7 @@ Thin fetch wrapper. Stores JWT in memory (caller persists it).
 - `signup(email, password): { user_id }`
 - `login(email, password): { jwt, account: AccountWrapper | null }`
 - `getAccount(jwt): AccountWrapper`
-- `putAccount(jwt, AccountWrapper)` — first-time encryption setup
+- `putAccount(jwt, AccountWrapper)` - first-time encryption setup
 - `listNotes(jwt, since: number): EncryptedNoteRow[]`
 - `upsertNote(jwt, EncryptedNoteRow)`
 - `deleteNote(jwt, id)`

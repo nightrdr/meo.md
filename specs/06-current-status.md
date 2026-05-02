@@ -1,4 +1,4 @@
-# Current status — desktop and mobile
+# Current status - desktop and mobile
 
 A precise, current-as-of-this-document inventory of what's shipped, what
 works end-to-end, and what's deliberately deferred. This is the
@@ -84,12 +84,12 @@ PostgREST, Realtime, Storage (MinIO), Studio, Inbucket. ~10 containers.
 - **Schema** (`supabase/migrations/`):
   - `meo.accounts(user_id, salt, encrypted_master_key, master_key_nonce, kdf_params)`
   - `meo.notes(id, user_id, encrypted_content, nonce, version, hlc_timestamp, updated_at, deleted_at, size_bytes)`
-  - `meo.sync_cursor(user_id, next_version)` — per-user monotonic counter
+  - `meo.sync_cursor(user_id, next_version)` - per-user monotonic counter
 - **RLS** enforced on every table: `user_id = auth.uid()`. Verified in
   the E2E test that user B sees zero of user A's notes.
 - **RPCs** (SECURITY DEFINER):
-  - `meo.upsert_note(...)` — atomic version bump + HLC last-write-wins
-  - `meo.delete_note(id)` — tombstone + version bump
+  - `meo.upsert_note(...)` - atomic version bump + HLC last-write-wins
+  - `meo.delete_note(id)` - tombstone + version bump
 - **Auth** via Supabase GoTrue. Email/password; email verification off
   for local dev (per `config.toml`).
 
@@ -140,19 +140,19 @@ All four suites are green.
 | Auth (login + signup + passphrase + Secret Key + unlock) | ✅ verified | `src/Auth.tsx` |
 | Three-pane app shell | ✅ | `src/App.tsx` |
 | Sidebar (Library + Folders + Tags + Ask Meo + AIControls) | ✅ | `src/App.tsx`, `src/AIControls.tsx` |
-| Notes list (list-pane) | ✅ — title, preview, time-ago, tag chips | `src/App.tsx` |
+| Notes list (list-pane) | ✅ - title, preview, time-ago, tag chips | `src/App.tsx` |
 | Editor (TipTap, full markdown toolbar, Edit/Split/Preview, tag chips) | ✅ | `src/Editor.tsx` |
-| Right-click context menus (note / folder / tag / FOLDERS header) | ✅ — verified in preview | `src/ContextMenu.tsx` |
-| Folder + sub-folder creation (inline rename input, persisted) | ✅ — verified | `src/App.tsx` |
-| Tag picker on note + tag chips in sidebar + tag context menu | ✅ — verified | `src/Editor.tsx`, `src/App.tsx` |
-| ⌘K search overlay (notes + folders + tags, kbd nav) | ✅ — verified | `src/SearchOverlay.tsx` |
+| Right-click context menus (note / folder / tag / FOLDERS header) | ✅ - verified in preview | `src/ContextMenu.tsx` |
+| Folder + sub-folder creation (inline rename input, persisted) | ✅ - verified | `src/App.tsx` |
+| Tag picker on note + tag chips in sidebar + tag context menu | ✅ - verified | `src/Editor.tsx`, `src/App.tsx` |
+| ⌘K search overlay (notes + folders + tags, kbd nav) | ✅ - verified | `src/SearchOverlay.tsx` |
 | Drag-and-drop note → folder | ✅ | `src/App.tsx` |
 | Native context-menu blocked (no Inspect Element) | ✅ | `src/App.tsx` |
-| **Ask Meo panel** (right drawer, Ask + Chat modes, citations) | ✅ — verified end-to-end against Ollama | `src/AIPanel.tsx`, `src/aiStore.ts` |
-| **Slash menu** (`/` in editor → Summarize / Action items / Outline / Improve) | ✅ — verified streaming into editor | `src/SlashMenu.tsx` |
-| **Settings → AI** (Local models with Ollama pull, Embeddings progress + force re-index, Cloud locked v1.1) | ✅ — verified | `src/Settings.tsx` |
-| **Attachments E2EE pipeline** (per-attachment HKDF key, AES-256-GCM streaming encrypt, encrypted metadata blob, signed PUT/GET URLs via Edge Functions, iDrive prod / MinIO dev fallback) | ✅ — round-trip test passes; bytes ciphertext at rest; filename never plaintext in DB | `packages/shared/src/attachments.ts`, `packages/desktop/src/AttachmentRenderer.tsx`, `supabase/functions/attachments-{upload,download}-url/`, `supabase/migrations/20260428000000_attachments.sql` |
-| **Image upload / drop in editor** (file picker, drag-and-drop, custom TipTap node view that fetches + decrypts on demand) | ✅ — wired into `Editor.tsx` toolbar + drop zone | `src/Editor.tsx`, `src/AttachmentRenderer.tsx` |
+| **Ask Meo panel** (right drawer, Ask + Chat modes, citations) | ✅ - verified end-to-end against Ollama | `src/AIPanel.tsx`, `src/aiStore.ts` |
+| **Slash menu** (`/` in editor → Summarize / Action items / Outline / Improve) | ✅ - verified streaming into editor | `src/SlashMenu.tsx` |
+| **Settings → AI** (Local models with Ollama pull, Embeddings progress + force re-index, Cloud locked v1.1) | ✅ - verified | `src/Settings.tsx` |
+| **Attachments E2EE pipeline** (per-attachment HKDF key, AES-256-GCM streaming encrypt, encrypted metadata blob, signed PUT/GET URLs via Edge Functions, iDrive prod / MinIO dev fallback) | ✅ - round-trip test passes; bytes ciphertext at rest; filename never plaintext in DB | `packages/shared/src/attachments.ts`, `packages/desktop/src/AttachmentRenderer.tsx`, `supabase/functions/attachments-{upload,download}-url/`, `supabase/migrations/20260428000000_attachments.sql` |
+| **Image upload / drop in editor** (file picker, drag-and-drop, custom TipTap node view that fetches + decrypts on demand) | ✅ - wired into `Editor.tsx` toolbar + drop zone | `src/Editor.tsx`, `src/AttachmentRenderer.tsx` |
 
 ### Privacy invariants verified live
 
@@ -178,7 +178,7 @@ Within budgets from `05-llm-architecture.md` §10.
 
 ### Deferred on desktop (out of v1.0)
 
-- **Cloud frontier LLM keys** — entire keychain + provider adapters
+- **Cloud frontier LLM keys** - entire keychain + provider adapters
   are scoped in `05-llm-architecture.md` §8 but gated to v1.1 / paid tier.
 - **Cross-encoder rerank** (deferred to v1.1 per §17a).
 - **Custom HF model URL input** in Settings (v1.1).
@@ -206,44 +206,44 @@ Within budgets from `05-llm-architecture.md` §10.
 
 | Surface | Status | File |
 |---|---|---|
-| Auth screens (login / signup / passphrase / Secret Key / unlock) | ✅ — Meo-styled, MeoMark logo, serif headings | `app/index.tsx` |
-| **Supabase backend wiring** (`SupabaseApiClient` mobile variant) | ✅ — same RPCs (`meo.upsert_note` etc.) as desktop | `src/shared/supabase-api.ts`, `src/session.ts:makeApiClient` |
-| Folders top-level screen (system + user folder cards + tag chips + FAB) | ✅ — drilldown navigation matches `mobile.jsx` | `app/folders.tsx` |
+| Auth screens (login / signup / passphrase / Secret Key / unlock) | ✅ - Meo-styled, MeoMark logo, serif headings | `app/index.tsx` |
+| **Supabase backend wiring** (`SupabaseApiClient` mobile variant) | ✅ - same RPCs (`meo.upsert_note` etc.) as desktop | `src/shared/supabase-api.ts`, `src/session.ts:makeApiClient` |
+| Folders top-level screen (system + user folder cards + tag chips + FAB) | ✅ - drilldown navigation matches `mobile.jsx` | `app/folders.tsx` |
 | Folder detail screen (back nav + serif title + notes card) | ✅ | `app/folder/[path].tsx` |
-| Note editor (title + folder + body + tags + bottom toolbar) | ✅ — plain markdown TextInput body, formatting buttons | `app/note/[id].tsx` |
+| Note editor (title + folder + body + tags + bottom toolbar) | ✅ - plain markdown TextInput body, formatting buttons | `app/note/[id].tsx` |
 | **ActionSheet** (universal bottom sheet for context menus) | ✅ | `src/ActionSheet.tsx` |
 | **PromptSheet** (universal bottom sheet for inline prompts) | ✅ | `src/ActionSheet.tsx` |
 | **Long-press context menus** on notes / folders / tags | ✅ | wired in `folders.tsx` + `folder/[path].tsx` + `note/[id].tsx` |
-| **Folder + sub-folder creation** (inline prompt) | ✅ — `+` button, long-press → New sub-folder | `folders.tsx` |
+| **Folder + sub-folder creation** (inline prompt) | ✅ - `+` button, long-press → New sub-folder | `folders.tsx` |
 | **Folder rename / delete** (cascades to notes) | ✅ | `folders.tsx` + `folder/[path].tsx` |
 | **Tag chips** in sidebar + per-note add/remove + long-press for filter / remove-from-all | ✅ | sidebar in `folders.tsx`, in-editor in `note/[id].tsx` |
-| **Search overlay** (full-screen modal, notes + folders + tags) | ✅ — same scoring shape as desktop ⌘K | `src/SearchOverlay.tsx` |
+| **Search overlay** (full-screen modal, notes + folders + tags) | ✅ - same scoring shape as desktop ⌘K | `src/SearchOverlay.tsx` |
 | **Sign out** action sheet | ✅ | `folders.tsx` |
-| Brand row + Sparkle / Settings / Sign-out buttons | ✅ — matches design mock | `folders.tsx` |
-| **AI shared modules** (types, registry, BM25, RRF/MMR retrieval, RAG orchestrator, Ollama backend) | ✅ — same code path as desktop, RN-adapted | `src/shared/ai/*` |
+| Brand row + Sparkle / Settings / Sign-out buttons | ✅ - matches design mock | `folders.tsx` |
+| **AI shared modules** (types, registry, BM25, RRF/MMR retrieval, RAG orchestrator, Ollama backend) | ✅ - same code path as desktop, RN-adapted | `src/shared/ai/*` |
 | **Mobile aiStore** (AsyncStorage-backed vector store + BM25 + Ollama generator + indexNote/rebuild) | ✅ | `src/aiStore.ts` |
-| **AI bottom sheet** wired to RAG + status states (loading / no-backend / no-model / ready / error) | ✅ — gracefully degrades to BM25-only when embedder is no-op | `src/AISheet.tsx` |
+| **AI bottom sheet** wired to RAG + status states (loading / no-backend / no-model / ready / error) | ✅ - gracefully degrades to BM25-only when embedder is no-op | `src/AISheet.tsx` |
 | **Settings → AI screen** (Local models discovered from Ollama, Embeddings status + Force re-index, Cloud v1.1 lock) | ✅ | `app/settings/ai.tsx` |
-| Cross-platform crypto interop with desktop | ✅ — verified by `test-interop.mjs` | `src/shared/crypto.ts` (noble) |
-| Bundles cleanly for iOS via Expo's Metro | ✅ — 3.08 MB hbc | — |
-| **`expo prebuild` done** (irreversible — bare workflow, Expo Go gone) | ✅ — `ios/` + `android/` folders generated, gitignored | `packages/mobile/ios/`, `packages/mobile/android/` |
-| **`llama.rn` integration** (RN binding around llama.cpp; Metal on iOS, Vulkan/OpenCL/CPU on Android) | ✅ shipped — `LlamaRnBackend` implements `Generator`; downloads GGUF Q4 quants from Hugging Face Hub on demand via `expo-file-system` | `src/shared/ai/backends/llamaRn.ts` |
-| **`op-sqlite` vector store** (replaces AsyncStorage-backed JSON for scale) | ✅ — schema `note_vectors(note_id, dim, vec, vec_hash, embedder_id)` per spec §6.2 | `src/shared/ai/vectorStore.sqlite.ts` |
-| **Apple FoundationModels backend** (iOS 18+ system LLM, free, no download) | ✅ — Swift Pod (`FoundationLLM.podspec` + `FoundationLLMModule.swift`) bridges `LanguageModelSession` to RN via `RCTEventEmitter`. JS side wires `requestId` per call; tokens stream as `FoundationLLMOnToken` events. Linked into Podfile via local `foundation-llm-plugin.js` | `modules/foundation-llm/`, `src/shared/ai/backends/foundation.ts`, `foundation-llm-plugin.js` |
-| **Real bge-small-en-v1.5 embedder** (`onnxruntime-react-native`) | ✅ — `OnnxBgeSmallEmbedder` does mean-pool weighted by attention_mask + L2-normalize, 384-dim output. Pure-JS WordPiece tokenizer (`tokenizer.ts`, 9 self-tests green). 33 MB ONNX + 250 KB vocab download on demand via `expo-file-system`'s `createDownloadResumable`. Toggle in Settings → AI rebuilds the index. `NoopEmbedder` remains the default until the user opts in | `src/shared/ai/embeddings.ts`, `src/shared/ai/tokenizer.ts`, `app/settings/ai.tsx` |
-| **Mobile attachments file + image picker** | ✅ — `expo-image-picker` for camera-roll images (with permission flow + dimensions), `expo-document-picker` for arbitrary files. Upload status banner in the editor toolbar. Cross-platform interop test (mobile noble ↔ desktop Web Crypto) passes 3/3 cases | `app/note/[id].tsx`, `src/attachmentsBridge.ts`, `test-attachments-interop.mjs` |
+| Cross-platform crypto interop with desktop | ✅ - verified by `test-interop.mjs` | `src/shared/crypto.ts` (noble) |
+| Bundles cleanly for iOS via Expo's Metro | ✅ - 3.08 MB hbc | - |
+| **`expo prebuild` done** (irreversible - bare workflow, Expo Go gone) | ✅ - `ios/` + `android/` folders generated, gitignored | `packages/mobile/ios/`, `packages/mobile/android/` |
+| **`llama.rn` integration** (RN binding around llama.cpp; Metal on iOS, Vulkan/OpenCL/CPU on Android) | ✅ shipped - `LlamaRnBackend` implements `Generator`; downloads GGUF Q4 quants from Hugging Face Hub on demand via `expo-file-system` | `src/shared/ai/backends/llamaRn.ts` |
+| **`op-sqlite` vector store** (replaces AsyncStorage-backed JSON for scale) | ✅ - schema `note_vectors(note_id, dim, vec, vec_hash, embedder_id)` per spec §6.2 | `src/shared/ai/vectorStore.sqlite.ts` |
+| **Apple FoundationModels backend** (iOS 18+ system LLM, free, no download) | ✅ - Swift Pod (`FoundationLLM.podspec` + `FoundationLLMModule.swift`) bridges `LanguageModelSession` to RN via `RCTEventEmitter`. JS side wires `requestId` per call; tokens stream as `FoundationLLMOnToken` events. Linked into Podfile via local `foundation-llm-plugin.js` | `modules/foundation-llm/`, `src/shared/ai/backends/foundation.ts`, `foundation-llm-plugin.js` |
+| **Real bge-small-en-v1.5 embedder** (`onnxruntime-react-native`) | ✅ - `OnnxBgeSmallEmbedder` does mean-pool weighted by attention_mask + L2-normalize, 384-dim output. Pure-JS WordPiece tokenizer (`tokenizer.ts`, 9 self-tests green). 33 MB ONNX + 250 KB vocab download on demand via `expo-file-system`'s `createDownloadResumable`. Toggle in Settings → AI rebuilds the index. `NoopEmbedder` remains the default until the user opts in | `src/shared/ai/embeddings.ts`, `src/shared/ai/tokenizer.ts`, `app/settings/ai.tsx` |
+| **Mobile attachments file + image picker** | ✅ - `expo-image-picker` for camera-roll images (with permission flow + dimensions), `expo-document-picker` for arbitrary files. Upload status banner in the editor toolbar. Cross-platform interop test (mobile noble ↔ desktop Web Crypto) passes 3/3 cases | `app/note/[id].tsx`, `src/attachmentsBridge.ts`, `test-attachments-interop.mjs` |
 
 ### What's still pending on mobile
 
 | Missing | Plan |
 |---|---|
-| **Gemini Nano via ML Kit GenAI** | Equivalent for supported Android (Pixel 8+, Galaxy S24+). Same shape as Apple's bridge — Kotlin module exposing `GenerativeModel` over `RCTEventEmitter`. |
+| **Gemini Nano via ML Kit GenAI** | Equivalent for supported Android (Pixel 8+, Galaxy S24+). Same shape as Apple's bridge - Kotlin module exposing `GenerativeModel` over `RCTEventEmitter`. |
 | **iOS simulator / device build** | This host doesn't have an iOS simulator installed (`xcrun simctl list devices` is empty). Install path documented in §10 below. Bundle export already works. |
 | Slash menu inside the editor | Keyboard-toolbar `/` button; lower priority. |
 | Background fetch / push notifications for sync | Per spec §5.3, deferred. |
 | Biometric unlock (LocalAuthentication) | Per spec §5.3, deferred. |
-| Camera capture | Per spec §5.4 — `expo-image-picker` already covers gallery + camera roll; live capture is a one-call upgrade (`launchCameraAsync`). |
-| TenTap rich editor | Per spec §5.2, deferred — plain TextInput is fine for v1. |
+| Camera capture | Per spec §5.4 - `expo-image-picker` already covers gallery + camera roll; live capture is a one-call upgrade (`launchCameraAsync`). |
+| TenTap rich editor | Per spec §5.2, deferred - plain TextInput is fine for v1. |
 
 ---
 
@@ -260,7 +260,7 @@ The single source of truth for cross-platform logic.
 | `src/hlc.ts` | Hybrid logical clock |
 | `src/crypto.ts` | Web Crypto-based PBKDF2 → AES-GCM → HKDF (desktop) |
 | `src/api.ts` | Hono-backed `ApiClient` (legacy, fallback only) |
-| `src/supabase-api.ts` | `SupabaseApiClient` — drop-in replacement |
+| `src/supabase-api.ts` | `SupabaseApiClient` - drop-in replacement |
 | `src/ai/types.ts` | `Embedder`, `VectorStore`, `Generator`, `RetrievedChunk`, etc. |
 | `src/ai/registry.ts` | Static model catalogue (local + system-os + cloud) |
 | `src/ai/embeddings.ts` | bge-small-en-v1.5 via `@huggingface/transformers` + cosine util |
@@ -282,15 +282,15 @@ be added to the mobile mirror in phase 3 (next).
 | Spec § | What the spec says | What we shipped | Why |
 |---|---|---|---|
 | §3.2 | Argon2id KDF | PBKDF2-SHA256 (600k iters) | Argon2 in browser/RN requires WASM bundle; PBKDF2 is built into Web Crypto on every platform. Same key hierarchy. Documented in `00-mvp-scope.md`. |
-| §3.5 | sqlite-vec for vector store | IndexedDB (desktop) / AsyncStorage (mobile, phase 3) | Brute-force cosine is <50 ms for 10k notes — the spec's complexity comes from scale we don't have yet. |
+| §3.5 | sqlite-vec for vector store | IndexedDB (desktop) / AsyncStorage (mobile, phase 3) | Brute-force cosine is <50 ms for 10k notes - the spec's complexity comes from scale we don't have yet. |
 | §3.5 | Hybrid retrieval (BM25 + vector + cross-encoder rerank) | BM25 + vector + RRF + MMR; cross-encoder rerank deferred to v1.1 | Cross-encoder is a 120 MB extra download; locked in `05-llm-architecture.md` §17a. |
 | §3.6 | Local LLM via llama.cpp wrapper | Ollama on desktop; llama.rn deferred to phase 3 on mobile | Ollama already does GGUF + downloads + GPU offload; not bundling the runtime is the right MVP call. |
 | §4 | Tauri 2.x desktop shell | Tauri 2 wired up; web app also works standalone | Both ship. |
 | §5.2 | TenTap (TipTap-in-WebView) on mobile | Plain markdown TextInput | Per `04-mobile.md`, TenTap is the v1.5 nice-to-have. |
 | §5.5 | Local LLM on mobile via llama.cpp NDK / Metal | **Shipped** via `llama.rn` (binding around llama.cpp). Embedder runtime in place; bge-small wiring is the remaining step. | One-way door taken. |
-| §2.5 | AI proxy as a metered passthrough | Built into the spec only — not yet shipped | Cloud LLMs are tier-gated; ship with v1.1 alongside frontier keys. |
+| §2.5 | AI proxy as a metered passthrough | Built into the spec only - not yet shipped | Cloud LLMs are tier-gated; ship with v1.1 alongside frontier keys. |
 | §2.6 | Paddle billing | Not in v1.0 | Auth gate only; revenue path comes after launch. |
-| §3.8 | Attachments with streaming AES-GCM | **Shipped** — per-attachment HKDF key, 1 MiB chunked AES-GCM, encrypted metadata blob, signed URLs via Edge Functions, iDrive prod / MinIO local. E2E test green. | Mobile UI follow-up is the only remainder. |
+| §3.8 | Attachments with streaming AES-GCM | **Shipped** - per-attachment HKDF key, 1 MiB chunked AES-GCM, encrypted metadata blob, signed URLs via Edge Functions, iDrive prod / MinIO local. E2E test green. | Mobile UI follow-up is the only remainder. |
 | §6.1 | QR pairing for new device | Manual passphrase + Secret Key only | QR pairing is a substantial side-channel; manual entry covers the same threat model. |
 
 Nothing here paints us into a corner; each row has a non-destructive
@@ -315,8 +315,8 @@ prebuild" so we can keep moving on whichever you prefer.
    architecture I locked earlier). Schema, signed-URL Edge Function,
    client streaming AES-GCM, image/file upload buttons in the editor.
 4. **Realtime WebSocket sync** (replaces 10s polling). Per spec §2.4.
-5. **Slash menu on mobile** — keyboard-toolbar `/` button.
-6. **Note pinning** — schema field, sort order, Pin folder filter
+5. **Slash menu on mobile** - keyboard-toolbar `/` button.
+6. **Note pinning** - schema field, sort order, Pin folder filter
    actually populates.
 
 ### Requires `expo prebuild` (one-way door)
@@ -388,10 +388,10 @@ where `xcrun simctl list devices` is empty:
 # Check what's installed
 xcodebuild -showsdks
 
-# Option A — via Xcode CLI (~7 GB download)
+# Option A - via Xcode CLI (~7 GB download)
 sudo xcodebuild -downloadPlatform iOS
 
-# Option B — via Xcode UI: open Xcode → Settings → Components → click
+# Option B - via Xcode UI: open Xcode → Settings → Components → click
 # "Download" next to the latest iOS Simulator runtime.
 
 # After it finishes, verify:
@@ -420,7 +420,7 @@ arch -x86_64 pod install            # one-shot if rosetta-only gems
 The `FoundationLLM` pod weak-links the FoundationModels framework, so
 the binary loads on iOS 15+ but the entry points return
 `{available: false}` on anything below iOS 18. Apple Intelligence is
-further gated by the OS to A17 Pro / M-series silicon — Settings → AI
+further gated by the OS to A17 Pro / M-series silicon - Settings → AI
 shows the model row as "Detected on this OS, native bridge not yet
 linked" until the device + user opt-in are both ready.
 

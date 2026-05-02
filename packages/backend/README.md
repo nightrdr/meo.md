@@ -5,16 +5,16 @@ encryption-wrapper for each account; never sees plaintext.
 
 Originally written in TypeScript on Hono. Rewritten in Go for the
 single-binary deploy story (no Node runtime, no `npm install` on the
-production host). Wire-compatible with the TS server — same routes,
+production host). Wire-compatible with the TS server - same routes,
 same JSON shapes, same scrypt-format password hashes, same HS256
-JWTs — so a `meo.sqlite` produced by either binary opens cleanly in
+JWTs - so a `meo.sqlite` produced by either binary opens cleanly in
 the other.
 
 ## Layout
 
 ```
 packages/backend/
-├── cmd/server/         # composition root — only place that wires deps
+├── cmd/server/         # composition root - only place that wires deps
 │   └── main.go
 ├── internal/
 │   ├── config/         # env loader (PORT, MEO_DB_PATH, JWT_SECRET)
@@ -25,7 +25,7 @@ packages/backend/
 │   │   ├── accounts.go # AccountStore
 │   │   └── notes.go    # NoteStore + SyncCursorStore (transactional Next())
 │   ├── auth/
-│   │   ├── hasher.go   # scrypt N=16384, r=8, p=1 — TS-compatible format
+│   │   ├── hasher.go   # scrypt N=16384, r=8, p=1 - TS-compatible format
 │   │   └── jwt.go      # HS256, base64url(no-pad), TS-compatible
 │   └── api/
 │       ├── server.go   # Server struct holds all deps; Routes() builds gin engine
@@ -40,7 +40,7 @@ packages/backend/
 ## Run (local source)
 
 ```bash
-# dev — runs from source, no autoreload
+# dev - runs from source, no autoreload
 make dev
 
 # production-style binary
@@ -92,7 +92,7 @@ distroless/static-debian12:nonroot   ~3 MB   (base layer)
 = ~5.6 MB total
 ```
 
-No shell, no package manager, no glibc — there's no `docker exec -it
+No shell, no package manager, no glibc - there's no `docker exec -it
 … sh` to debug. That's the point. If you need to inspect a running
 container, attach via `docker inspect` / `docker logs` / `docker stats`,
 or temporarily run from `gcr.io/distroless/static-debian12:debug`
@@ -105,7 +105,7 @@ which is the same image but ships busybox.
 | `PORT` | `8787` | HTTP listen port |
 | `MEO_DB_PATH` | `/data/meo.sqlite` | SQLite file inside the volume |
 | `MEO_MODEL_DIR` | `/data/models` | hosted model files (Agent 7's manifest) |
-| `JWT_SECRET` | *(empty — REQUIRED in prod)* | utf-8 bytes; falls back to per-process random if missing, which invalidates issued JWTs on restart |
+| `JWT_SECRET` | *(empty - REQUIRED in prod)* | utf-8 bytes; falls back to per-process random if missing, which invalidates issued JWTs on restart |
 | `MEO_ADMIN_TOKEN` | *(empty)* | Bearer token for the `POST /models/:id/upload` endpoint. Empty = uploads disabled. |
 
 The `/data` volume is owned by UID 65532 (distroless's `nonroot`). The
@@ -139,7 +139,7 @@ http.ListenAndServe(":8787", srv.Routes())
 The handlers are methods on `*api.Server`, not free functions. The
 DB handle lives in `*store.UserStore.db`, not a package var. A test
 that wants to swap the JWT signer for a fake one builds a Server with
-its own values — no monkey-patching, no init hooks, no `database.DB =
+its own values - no monkey-patching, no init hooks, no `database.DB =
 mockDB`.
 
 This is intentionally the opposite of the gin-boilerplate
@@ -155,9 +155,9 @@ appropriate HTTP status.
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| `GET`    | `/healthz`         | — | liveness probe |
-| `POST`   | `/auth/signup`     | — | `{email, password}` → `{user_id}` |
-| `POST`   | `/auth/login`      | — | `{email, password}` → `{jwt, has_account, user_id}` |
+| `GET`    | `/healthz`         | - | liveness probe |
+| `POST`   | `/auth/signup`     | - | `{email, password}` → `{user_id}` |
+| `POST`   | `/auth/login`      | - | `{email, password}` → `{jwt, has_account, user_id}` |
 | `GET`    | `/account`         | Bearer | wrapped master key for the user |
 | `PUT`    | `/account`         | Bearer | upload wrapper (one-shot per user) |
 | `GET`    | `/sync/notes?since=N` | Bearer | rows with `version > N`, ordered |

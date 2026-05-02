@@ -47,7 +47,7 @@ func (s *Server) signup(c *gin.Context) {
 }
 
 // login verifies credentials and returns a JWT + has_account flag.
-// Note: returns 401 on both unknown email and bad password — never
+// Note: returns 401 on both unknown email and bad password - never
 // distinguish, to avoid email enumeration.
 func (s *Server) login(c *gin.Context) {
 	var req loginRequest
@@ -81,7 +81,7 @@ func claimsFor(c *gin.Context) *auth.Claims {
 }
 
 // newUUID returns a v4-style UUID string. Avoids a dependency on
-// google/uuid for one call site — generates 16 random bytes and
+// google/uuid for one call site - generates 16 random bytes and
 // formats them with the version + variant bits set.
 func newUUID() (string, error) {
 	b := make([]byte, 16)

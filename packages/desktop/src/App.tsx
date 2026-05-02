@@ -51,7 +51,7 @@ export default function App() {
   // valid JWT and a wrap_blob in IndexedDB, we route directly to the
   // 'biometric' Auth mode so they can unlock with Touch ID instead of
   // re-typing passphrase + Secret Key. `null` means "still deciding"
-  // — we render nothing until the IDB read completes so the user
+  // - we render nothing until the IDB read completes so the user
   // doesn't see the email screen flash before the biometric prompt.
   const [authStart, setAuthStart] = useState<{
     mode: 'email' | 'biometric';
@@ -66,7 +66,7 @@ export default function App() {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // Mirror of `selectedId` for use inside callbacks captured by
-  // useMemo/useCallback that don't list `selectedId` in their deps —
+  // useMemo/useCallback that don't list `selectedId` in their deps -
   // avoids stale-closure issues for the native-menu export handler.
   const selectedIdRef = useRef<string | null>(null);
   useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
@@ -104,13 +104,13 @@ export default function App() {
   // refreshSubscription resolves (and the session reference identity stays
   // stable, so we use a separate state for the rerender trigger).
   const [tier, setTier] = useState<ReturnType<typeof getCurrentTier>>('free');
-  // Tiny About modal — opened from the App menu (Agent 5).
+  // Tiny About modal - opened from the App menu (Agent 5).
   const [aboutOpen, setAboutOpen] = useState(false);
   // QR-pairing modal (Agent 9). Opened via File ▸ "New Device…" from the
   // native menu bar, the sidebar, or programmatically from cap-reached
   // toasts (the latter not wired yet).
   const [pairingOpen, setPairingOpen] = useState(false);
-  // Sidebar visibility — persisted via setMeta. Toggle through the
+  // Sidebar visibility - persisted via setMeta. Toggle through the
   // list-pane header button, the ⇧⌘S shortcut, or `toggleSidebar()`
   // (Agent 5's native View menu calls into this).
   const [sidebarHidden, setSidebarHidden] = useState(false);
@@ -119,7 +119,7 @@ export default function App() {
   // before swapping selectedId → editor.
   const [vaultPrompt, setVaultPrompt] = useState<{ noteId: string } | null>(null);
   // Tracks the previously-open note id so we can re-lock vault notes on
-  // switch. Mirrors `selectedId` but lags by one render — see the effect
+  // switch. Mirrors `selectedId` but lags by one render - see the effect
   // below that runs `relockVaultNote` on the previous id.
   const lastSelectedRef = useRef<string | null>(null);
   // 2FA gate (Agent 8). True when the cold-start TOTP screen is showing.
@@ -154,7 +154,7 @@ export default function App() {
           if (!cancelled) setAuthStart({ mode: 'biometric', email: meta.email });
           return;
         }
-        // JWT expired but wrap data left behind — clean up so the
+        // JWT expired but wrap data left behind - clean up so the
         // next biometric prompt isn't a no-op against stale meta.
         if (!hasValidJwt && hasWrap) {
           await setMeta({
@@ -191,7 +191,7 @@ export default function App() {
   // ⌘K opens search; ⌘/ toggles AI panel; ⌘N creates a note.
   // Escape closes the topmost overlay; if nothing is open, exits
   // browser fullscreen (macOS native fullscreen exits via the green
-  // button — this handles the F11/document.fullscreenElement case).
+  // button - this handles the F11/document.fullscreenElement case).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -209,14 +209,14 @@ export default function App() {
         handleNew();
         return;
       }
-      // ⇧⌘S / Ctrl+Shift+S — toggle sidebar (matches macOS Notes' ^⌘S).
+      // ⇧⌘S / Ctrl+Shift+S - toggle sidebar (matches macOS Notes' ^⌘S).
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 's' && session) {
         e.preventDefault();
         toggleSidebar();
         return;
       }
       if (e.key === 'Escape') {
-        // Topmost overlay first — order matches z-index reading.
+        // Topmost overlay first - order matches z-index reading.
         if (menu) { setMenu(null); e.preventDefault(); return; }
         if (aboutOpen) { setAboutOpen(false); e.preventDefault(); return; }
         if (searchOpen) { setSearchOpen(false); e.preventDefault(); return; }
@@ -227,7 +227,7 @@ export default function App() {
         if (aiPanelOpen) { setAiPanelOpen(false); e.preventDefault(); return; }
         // Editor-internal overlays (find bar, AI bubbles, slash menu) handle
         // Esc themselves at a deeper level and stopPropagation when they
-        // consume it. If we got here, nothing app-level is open — try to
+        // consume it. If we got here, nothing app-level is open - try to
         // exit fullscreen.
         if (document.fullscreenElement) {
           document.exitFullscreen?.().catch(() => {});
@@ -240,7 +240,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, aiOn, menu, searchOpen, settingsOpen, aboutOpen, tagAddOpen, creatingFolder, renamingFolder, aiPanelOpen, toggleSidebar]);
 
-  // Native menu wiring (Agent 5) — see the `useMenuEvents` block
+  // Native menu wiring (Agent 5) - see the `useMenuEvents` block
   // further down. The hook is called after handleNew /
   // startCreateFolder are defined, since those are `const` and
   // can't be referenced before their `useCallback` runs.
@@ -308,7 +308,7 @@ export default function App() {
       setStatus('error'); setStatusMsg(`Sync failed: ${(e as Error).message}`);
     }
     // Load subscription tier + 2FA gate in the background. Failure is
-    // non-fatal — the user stays on the conservative 'free' default.
+    // non-fatal - the user stays on the conservative 'free' default.
     refreshSubscription(s).then(async () => {
       const t = getCurrentTier(s);
       setTier(t);
@@ -451,7 +451,7 @@ export default function App() {
     setSession(null);
     setSelectedId(null);
     // After sign-out the user should land on the email screen, not
-    // the biometric screen — clearAll wipes meta so the next mount
+    // the biometric screen - clearAll wipes meta so the next mount
     // would default to 'email' anyway, but we set it explicitly so
     // we don't render `null` while waiting for the IDB read.
     setAuthStart({ mode: 'email' });
@@ -596,7 +596,7 @@ export default function App() {
       }},
       { separator: true },
       { label: 'Copy title', icon: 'Copy', onClick: () => navigator.clipboard.writeText(note.title || 'Untitled') },
-      // Copy body is disabled for locked vault notes — copying ciphertext
+      // Copy body is disabled for locked vault notes - copying ciphertext
       // would be confusing and copying after unlock requires opening the
       // editor first.
       { label: 'Copy markdown body', icon: 'Copy', disabled: locked,
@@ -620,7 +620,7 @@ export default function App() {
         }},
       { separator: true },
       // Export submenu (Agent 2). Locked vault notes still expose
-      // the menu but the exporter sees the encrypted body — the user
+      // the menu but the exporter sees the encrypted body - the user
       // is expected to unlock first; we don't unlock on their behalf.
       { label: 'Export as', icon: 'Download', disabled: locked, items: [
         { label: 'Markdown',   icon: 'Note', onClick: () => { void exportNoteAsMarkdown(note); } },
@@ -720,7 +720,7 @@ export default function App() {
   // events; this hook turns them into typed callbacks. Handlers for
   // still-unimplemented features (export, print, import-markdown,
   // insert-link, new-tag, new-device) are intentionally omitted so
-  // useMenuEvents falls back to a console.warn — that way the gap
+  // useMenuEvents falls back to a console.warn - that way the gap
   // is visible in dev without the click silently doing nothing.
   // ⌘F is re-routed via a synthetic keydown so Editor.tsx's existing
   // find-bar listener handles it without a new prop.
@@ -736,7 +736,7 @@ export default function App() {
     onAbout: () => setAboutOpen(true),
     onSettings: () => setSettingsOpen(true),
     onLockAllVault: () => {
-      // Agent 8 — re-lock every currently-unlocked vault note. Cheap when
+      // Agent 8 - re-lock every currently-unlocked vault note. Cheap when
       // none are unlocked. Refresh fires a re-render so list previews swap
       // back to 🔒.
       if (!session) return;
@@ -753,16 +753,16 @@ export default function App() {
       console.warn('[meo] menu event not yet wired: mode change');
     },
     onToggleSidebar: toggleSidebar,
-    // Collapse/expand section bridges (Agent 4) — dispatched as DOM
+    // Collapse/expand section bridges (Agent 4) - dispatched as DOM
     // CustomEvents and consumed by Editor.tsx. Keyboard shortcuts also
     // fire these directly until Agent 5's lib.rs adds the menu rows.
     onCollapseSection: () => document.dispatchEvent(new CustomEvent('meo:collapse-section')),
     onExpandSection: () => document.dispatchEvent(new CustomEvent('meo:expand-section')),
     onCollapseAllSections: () => document.dispatchEvent(new CustomEvent('meo:collapse-all')),
     onExpandAllSections: () => document.dispatchEvent(new CustomEvent('meo:expand-all')),
-    // QR pairing (Agent 9) — File ▸ New Device opens the modal.
+    // QR pairing (Agent 9) - File ▸ New Device opens the modal.
     onNewDevice: () => setPairingOpen(true),
-    // File ▸ Export (Agent 2) — fires for the currently-selected note.
+    // File ▸ Export (Agent 2) - fires for the currently-selected note.
     // We can't read `selected` from inside this useMemo without a stale
     // closure issue, so we look up the current selection via a ref-less
     // closure on `session.notes` + `selectedId` at click time.
@@ -787,7 +787,7 @@ export default function App() {
         case 'html': void exportNoteAsHTML(note); break;
       }
     },
-    // import/print/insert-link/new-tag intentionally omitted — useMenuEvents
+    // import/print/insert-link/new-tag intentionally omitted - useMenuEvents
     // will console.warn until those ship.
   }), [
     handleNew, startCreateFolder, aiOn, dispatchFind, toggleSidebar, session, refresh,
@@ -999,7 +999,7 @@ export default function App() {
               {notes.map((n) => {
                 // Vault preview redaction (Agent 8). A vault-flagged note
                 // whose body is still in `vault:...` wire form (i.e. not
-                // unlocked for this open) renders a placeholder — never the
+                // unlocked for this open) renders a placeholder - never the
                 // ciphertext, never a partial title leak.
                 const vaultLocked = !!n.isVault && isVaultLockedBody(n.body);
                 const previewText = vaultLocked
@@ -1113,12 +1113,12 @@ export default function App() {
         />
       )}
 
-      {/* About modal — opened from the macOS App menu (Agent 5). */}
+      {/* About modal - opened from the macOS App menu (Agent 5). */}
       {aboutOpen && (
         <AboutModal onClose={() => setAboutOpen(false)} />
       )}
 
-      {/* QR-pairing modal — opened from File ▸ New Device… (Agent 9). */}
+      {/* QR-pairing modal - opened from File ▸ New Device… (Agent 9). */}
       {pairingOpen && session && (
         <Pairing session={session} onClose={() => setPairingOpen(false)} />
       )}
@@ -1412,7 +1412,7 @@ function formatTimeAgo(iso: string): string {
 //   then for each older year:
 //     <Year> (e.g. "2024")
 //
-// `notes` is assumed to be already sorted by `updated_at` descending —
+// `notes` is assumed to be already sorted by `updated_at` descending -
 // we only iterate once and append to the matching bucket. All cutoffs
 // are computed against local-time midnight, so a note touched at
 // 12:01 AM "today" goes to **Today**, while 11:59 PM "yesterday" goes

@@ -2,7 +2,7 @@
 //
 // Strategy:
 //   * macOS: build a rich custom menu (App / File / Edit / View / Window)
-//     modelled on the macOS Notes app — that's where users expect a
+//     modelled on the macOS Notes app - that's where users expect a
 //     native menu and where AppKit's responder chain *requires* a Menu
 //     to dispatch Cmd+A/C/V/X/Z to the WKWebView. We keep the standard
 //     predefined Edit items (undo/redo/cut/copy/paste/select-all) so
@@ -20,7 +20,7 @@
 // frontend as a Tauri event named "menu://<id>". App.tsx subscribes
 // via the `useMenuEvents` hook in `src/menus.ts`. Predefined items
 // (cut/copy/paste/quit/etc.) are handled by AppKit directly and don't
-// fire menu events — that's the whole point of using them.
+// fire menu events - that's the whole point of using them.
 
 use tauri::Emitter;
 
@@ -47,7 +47,7 @@ pub fn run() {
         .on_menu_event(|app, event| {
             // Forward every custom-menu id to JS as `menu://<id>`.
             // Predefined items (undo/cut/quit/...) never reach this
-            // handler — AppKit consumes them — so anything we see here
+            // handler - AppKit consumes them - so anything we see here
             // is one of our `MenuItem::with_id` ids.
             let id = event.id().as_ref().to_string();
             let topic = format!("menu://{id}");

@@ -4,7 +4,7 @@ import type {
 
 export class ApiError extends Error {
   constructor(public status: number, public body: unknown) {
-    // Prefer the server-supplied `error` text — falls back to `message`,
+    // Prefer the server-supplied `error` text - falls back to `message`,
     // then to a generic "API <status>" string. Callers that previously
     // matched on `e.message === 'API 422'` should switch to `.status`.
     const text =
@@ -30,7 +30,7 @@ export function humanizeAuthError(e: unknown): string {
 
   // GoTrue / Supabase Auth common cases
   if (code === 'over_email_send_rate_limit' || lower.includes('rate limit'))
-    return 'Too many requests — wait a minute before trying again.';
+    return 'Too many requests - wait a minute before trying again.';
   if (code === 'otp_expired' || lower.includes('expired'))
     return 'That code has expired. Request a new one.';
   if (code === 'invalid_otp' || lower.includes('invalid otp') || lower.includes('token has expired or is invalid'))
@@ -52,7 +52,7 @@ export function humanizeAuthError(e: unknown): string {
   if (raw === 'Failed to fetch' || lower.includes('networkerror') || lower.includes('network request failed'))
     return 'Couldn\'t reach the server. Check your connection.';
 
-  // Anything we didn't explicitly recognize gets a generic message —
+  // Anything we didn't explicitly recognize gets a generic message -
   // the raw server text isn't useful to end users and often leaks
   // backend implementation detail. The original error is still
   // available on the thrown object's `body` / `status` for debugging.
@@ -113,7 +113,7 @@ export class ApiClient {
   }
 
   // ─── 2FA (Agent 8) ───────────────────────────────────────────────
-  // The Hono backend doesn't carry 2FA state yet — these throw so callers
+  // The Hono backend doesn't carry 2FA state yet - these throw so callers
   // get a clear "not supported on this backend" error instead of a 404.
   async tfaStatus(): Promise<boolean> { return false; }
   async tfaEnroll(): Promise<{ otpauth_url: string; secret_b32: string }> {

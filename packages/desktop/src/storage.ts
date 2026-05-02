@@ -20,13 +20,13 @@ interface Meta {
   // first-run setup (Agent 7)
   onboarding_done?: boolean;
   installed_models?: string[];   // ids of model files cached in this device
-  // BYO cloud LLM keys — local only, never sent to our server.
+  // BYO cloud LLM keys - local only, never sent to our server.
   // null/empty for tiers that haven't earned the privilege.
   cloud_keys?: { openai?: string; anthropic?: string; google?: string };
   // ─── Biometric quick-unlock (Agent 1) ───
   // master_wrap_blob is the AES-256-GCM ciphertext of the in-memory
   // masterRaw, encrypted with a per-device wrap_key. The wrap_key is
-  // NOT stored here — it lives in the OS keychain behind the
+  // NOT stored here - it lives in the OS keychain behind the
   // userPresence ACL (Touch ID / Watch / Windows Hello). On cold
   // start with a still-valid JWT we route to the biometric unlock
   // screen which pulls the wrap_key, decrypts this blob, and rebuilds

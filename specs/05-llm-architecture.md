@@ -1,4 +1,4 @@
-# LLM architecture — desktop and mobile
+# LLM architecture - desktop and mobile
 
 This is the design contract for everything AI in meo.md. It covers where
 inference runs, where embeddings come from, how RAG over notes works, how
@@ -260,10 +260,10 @@ export interface SearchHit {
 
 Two implementations:
 
-- `IndexedDbVectorStore` (desktop) — vectors stored as `Uint8Array`
+- `IndexedDbVectorStore` (desktop) - vectors stored as `Uint8Array`
   views in the existing `meo-md` IndexedDB under a new `vectors`
   object store. Brute-force cosine in the worker thread on every search.
-- `SqliteVectorStore` (mobile) — vectors stored as a `BLOB` column in a
+- `SqliteVectorStore` (mobile) - vectors stored as a `BLOB` column in a
   new SQLite table `note_vectors(note_id TEXT PRIMARY KEY, dim INT,
   vec BLOB)`. Brute-force cosine in JS over a query that pulls all
   rows. Below 10k notes this is <10 ms; above, we revisit.
@@ -349,9 +349,9 @@ collapsed footer below the answer.
 The AI panel has two query modes (a tiny segmented control at the top
 of the input):
 
-- **Ask** — single retrieval pass; returns "Answer from your notes"
+- **Ask** - single retrieval pass; returns "Answer from your notes"
   callout with citations + a list of notes. No conversation history.
-- **Chat** — multi-turn conversation. Each user turn does its own
+- **Chat** - multi-turn conversation. Each user turn does its own
   retrieval (so we don't pollute later turns with irrelevant context
   from earlier ones). History is in-memory only; not persisted.
 
@@ -361,7 +361,7 @@ These are two separate features and they should not be conflated:
 
 | Feature | Purpose | Index | Latency budget | Surface |
 |---|---|---|---|---|
-| **⌘K quick search** (already shipped) | Jump to a note / folder / tag by exact substring | None — linear scan over decrypted titles + bodies + tags + folders | <16 ms for 1000 notes | Cmd-K overlay |
+| **⌘K quick search** (already shipped) | Jump to a note / folder / tag by exact substring | None - linear scan over decrypted titles + bodies + tags + folders | <16 ms for 1000 notes | Cmd-K overlay |
 | **AI panel retrieval** (this doc) | Ground LLM answers in relevant notes via RAG | Hybrid: SQLite FTS5 (BM25) + local vector store | <50 ms for 10k notes | Right drawer (desktop) / bottom sheet (mobile) |
 
 Hybrid retrieval is **only** invoked from the AI panel. ⌘K does not
@@ -370,7 +370,7 @@ pure substring/fuzzy navigator. This keeps ⌘K instant and the AI
 retrieval path orthogonal to it; there is no shared code path or
 shared cache between the two.
 
-## 8. Frontier (cloud) keys — v1.1 only
+## 8. Frontier (cloud) keys - v1.1 only
 
 > **Status:** Not shipped in v1.0. Gated behind the paid tier system
 > (which doesn't exist yet). The architecture below is the contract
@@ -409,7 +409,7 @@ For Anthropic (others analogous):
 ```
 client (with user key)
    │
-   ▼  HTTPS to api.anthropic.com  (TLS only — no proxy)
+   ▼  HTTPS to api.anthropic.com  (TLS only - no proxy)
 provider
    │
    ▼  streaming response
@@ -674,7 +674,7 @@ What we ship vs. what we defer.
 - llama.rn integration on mobile (one default model)
 - Apple FoundationModels backend on iOS 18+
 - Consolidated Settings → AI screen (Local models tab only)
-- **Frontier (cloud) keys are NOT shipped in v1.0** — gated behind a
+- **Frontier (cloud) keys are NOT shipped in v1.0** - gated behind a
   paid tier that doesn't exist yet. The "Cloud models" section is
   hidden in the UI; the keychain abstraction and provider adapters
   live in the codebase but are not surfaced.
@@ -684,7 +684,7 @@ What we ship vs. what we defer.
 - Cross-encoder rerank for RAG, behind a "high-quality results
   (slower)" toggle in Settings
 - Frontier (cloud) keys for Anthropic, OpenAI, Google, OpenRouter,
-  xAI — gated to the paid tier, with the tier check enforced
+  xAI - gated to the paid tier, with the tier check enforced
   client-side and server-side
 - AI proxy, metered, for users on the paid tier without their own key
 - Gemini Nano via ML Kit on supported Android
@@ -752,7 +752,7 @@ implementation has no ambiguity.
   results (slower)" toggle. The 120 MB extra download is the cost we
   don't want to pay by default.
 
-## 18a. Mobile parity backlog (CRITICAL — not yet started)
+## 18a. Mobile parity backlog (CRITICAL - not yet started)
 
 **Mobile has NOT received the desktop redesign or any of the features
 shipped in the past several iterations.** It is still on the original
@@ -766,15 +766,15 @@ Audited from `packages/mobile/`:
 
 | Gap | Desktop has | Mobile state |
 |---|---|---|
-| Supabase backend | Yes (`SupabaseApiClient` via `@meo/shared`) | **No** — still constructs `new ApiClient('http://localhost:8787')` against the legacy Hono server |
-| Meo design system (warm paper, serif body, mossy accent, MeoMark logo) | Yes | **No** — generic `styles.ts` |
-| Three-pane mental model adapted for mobile | n/a (drilldown nav was the spec's own design) | Partial — `notes.tsx` is a flat list, not folder-aware |
-| Folder tree | Yes (recursive, expandable, indent-aware) | **No** — folders ignored entirely |
+| Supabase backend | Yes (`SupabaseApiClient` via `@meo/shared`) | **No** - still constructs `new ApiClient('http://localhost:8787')` against the legacy Hono server |
+| Meo design system (warm paper, serif body, mossy accent, MeoMark logo) | Yes | **No** - generic `styles.ts` |
+| Three-pane mental model adapted for mobile | n/a (drilldown nav was the spec's own design) | Partial - `notes.tsx` is a flat list, not folder-aware |
+| Folder tree | Yes (recursive, expandable, indent-aware) | **No** - folders ignored entirely |
 | Folder + sub-folder creation | Yes (inline rename input) | **No** |
-| Tags (per-note add/remove + sidebar tag list) | Yes | **No** — `note.tags` written but never surfaced |
-| Contextual menus (right-click → note / folder / tag) | Yes (`ContextMenu.tsx`) | **No** — RN has no `contextmenu` event; needs long-press → action sheet |
+| Tags (per-note add/remove + sidebar tag list) | Yes | **No** - `note.tags` written but never surfaced |
+| Contextual menus (right-click → note / folder / tag) | Yes (`ContextMenu.tsx`) | **No** - RN has no `contextmenu` event; needs long-press → action sheet |
 | Search overlay (⌘K, exact match nav) | Yes (`SearchOverlay.tsx`) | **No** |
-| Markdown toolbar (Edit/Split/Preview, headings, lists, etc.) | Yes (`Editor.tsx`) | **No** — plain monospace TextInput |
+| Markdown toolbar (Edit/Split/Preview, headings, lists, etc.) | Yes (`Editor.tsx`) | **No** - plain monospace TextInput |
 | AI controls in sidebar footer (on/off, model selector) | Yes (`AIControls.tsx`) | **No** |
 | Disabled native context menu | n/a | n/a (RN doesn't have one) |
 | Em-dash strip / copy review | Done | Not reviewed |
@@ -784,8 +784,8 @@ Audited from `packages/mobile/`:
 The zip the user shared includes mobile mocks I have not yet read in
 detail:
 
-- `design-mocks/components/mobile.jsx` (≈12 KB) — primary mobile layout
-- `design-mocks/ios-frame.jsx` — iOS device frame for the canvas
+- `design-mocks/components/mobile.jsx` (≈12 KB) - primary mobile layout
+- `design-mocks/ios-frame.jsx` - iOS device frame for the canvas
 - The shared modules (theme, icons, ai-controls, models-screen, data,
   note-renderer, markdown-editor) apply to both platforms
 
@@ -841,7 +841,7 @@ Once mobile is at parity, layer the LLM work in §16.1:
    in memory only when the AI panel is open; the table itself stores
    plaintext in app sandbox, OK by spec §13.1).
 4. **Local LLM runtime**: `llama.rn` integration (this requires
-   `npx expo prebuild` — the one-way door called out in §4 and in
+   `npx expo prebuild` - the one-way door called out in §4 and in
    `04-mobile.md`). Default model: Qwen 2.5 1.5B Q4.
 5. **Apple FoundationModels**: small native module gated by
    `Platform.OS === 'ios' && Platform.Version >= '18'`.
@@ -858,7 +858,7 @@ Once mobile is at parity, layer the LLM work in §16.1:
 | AI work 1-7 (embeddings + vector store + BM25 + llama.rn + FoundationModels + AI panel + Settings) | 6-8 |
 | **Total to bring mobile to spec parity with desktop including AI** | **12-16 days** |
 
-Compare desktop AI-only work (~5-7 days) — mobile is meaningfully more
+Compare desktop AI-only work (~5-7 days) - mobile is meaningfully more
 because it starts from further behind and `expo prebuild` is a costly
 detour.
 

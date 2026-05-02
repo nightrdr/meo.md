@@ -1,5 +1,5 @@
 // Full-screen search modal on mobile. Plain substring nav over decrypted
-// notes/folders/tags — same scope as the desktop ⌘K. Hybrid AI retrieval
+// notes/folders/tags - same scope as the desktop ⌘K. Hybrid AI retrieval
 // stays on the AI sheet (per spec §7.5).
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';

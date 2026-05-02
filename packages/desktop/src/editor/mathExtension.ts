@@ -1,9 +1,9 @@
-// Agent 2 — KaTeX math extensions for TipTap.
+// Agent 2 - KaTeX math extensions for TipTap.
 //
 // Two TipTap nodes:
-//   - `mathInline`  — inline `$x$` math, rendered as a non-editable
+//   - `mathInline`  - inline `$x$` math, rendered as a non-editable
 //                     span containing the KaTeX HTML.
-//   - `mathBlock`   — block `$$x$$` math, rendered as a non-editable
+//   - `mathBlock`   - block `$$x$$` math, rendered as a non-editable
 //                     div block.
 //
 // Both store the raw LaTeX source in `latex` attribute and an
@@ -28,7 +28,7 @@ async function loadKatex(): Promise<any> {
     if (!katexCssInjected) {
       katexCssInjected = true;
       try {
-        // Side-effect import — vite + esbuild will inline the CSS.
+        // Side-effect import - vite + esbuild will inline the CSS.
         // @ts-expect-error CSS module side-effect import
         await import('katex/dist/katex.min.css');
       } catch {
@@ -129,7 +129,7 @@ export const MathInline = Node.create({
           if (updated.type.name !== 'mathInline') return false;
           const next = renderMath(updated.attrs.latex || '', false);
           dom.replaceWith(next);
-          return false; // not the same DOM ref — let PM rebuild
+          return false; // not the same DOM ref - let PM rebuild
         },
       };
     };

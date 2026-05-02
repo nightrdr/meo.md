@@ -7,7 +7,7 @@
 //       RevenueCat: shows the App Store / Play Store callout
 //                   (Agent 10's cross-store conflict UX)
 //       no source / unknown: links to the marketing site
-//   - "Open AI" button — currently shows the mobile-only model alert
+//   - "Open AI" button - currently shows the mobile-only model alert
 //     and the "AI is available on desktop only" placeholder. The full
 //     panel is deferred to Phase 2.
 //
@@ -82,7 +82,7 @@ export function SettingsScreen({ session, onBack, onSignOut }: Props) {
         Alert.alert('Could not open billing portal'),
       );
     } else if (source === 'apple' || source === 'google') {
-      // Agent 10's cross-store conflict UX — App / Play stores don't
+      // Agent 10's cross-store conflict UX - App / Play stores don't
       // give us a usable web URL for third-party subs, so we tell
       // the user where to look on their phone.
       const store =
@@ -102,7 +102,7 @@ export function SettingsScreen({ session, onBack, onSignOut }: Props) {
   function handleAi() {
     // Mobile-only model gating per Agent 7's manifest. The actual
     // "default_for: ['mobile']" filter happens server-side in the
-    // model manifest endpoint — here we just warn the user that
+    // model manifest endpoint - here we just warn the user that
     // mobile is curated.
     Alert.alert(
       'Mobile AI is curated',

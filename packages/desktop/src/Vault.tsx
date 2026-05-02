@@ -7,25 +7,25 @@
 // caller with the note id.
 //
 // Unlock surfaces (in priority order):
-//   1. Biometric — if `biometricAvailable()` from Agent 1 returns true,
+//   1. Biometric - if `biometricAvailable()` from Agent 1 returns true,
 //      we offer a Touch ID / Windows Hello button. The platform prompt
 //      is fired by `loadWrapKey()` which validates against the keychain
 //      and on success we proceed straight to decryption (the vault_key
 //      is *not* the wrap key; biometric here is just the gate).
-//   2. Passphrase — fallback. We don't actually verify the passphrase
+//   2. Passphrase - fallback. We don't actually verify the passphrase
 //      against anything (it's just the user reaffirming their identity);
 //      a wrong typo will fail later when the AES-GCM tag check fails.
 //
 // Why no passphrase verification: vault_key is HKDF(masterRaw, user_id),
 // which is already in memory from the existing unlock path. The
-// passphrase here is purely UX — "this is *me* opening the vault" — not a
+// passphrase here is purely UX - "this is *me* opening the vault" - not a
 // crypto gate. If we wanted a stronger gate we'd derive the vault key
 // from the passphrase too; that's a v2 hardening.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon } from './Icon';
 
-// The biometric module ships with Agent 1 — until it lands, dynamic-import
+// The biometric module ships with Agent 1 - until it lands, dynamic-import
 // resolves to `null` and we fall back to passphrase only. Path is built at
 // runtime so TypeScript doesn't try to type-check the not-yet-existing file.
 interface BiometricMod {
@@ -58,7 +58,7 @@ export function Vault({ noteTitle, onUnlock, onCancel }: Props) {
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Probe Agent 1's biometric primitive lazily — if the module isn't
+  // Probe Agent 1's biometric primitive lazily - if the module isn't
   // present (older build, or when running in plain browser), fall back to
   // passphrase only without surfacing an error. The module path is
   // resolved at runtime via a string variable so TypeScript doesn't try
@@ -113,7 +113,7 @@ export function Vault({ noteTitle, onUnlock, onCancel }: Props) {
     try {
       // Passphrase is presence-only here (see comment at top of file). A wrong
       // value won't *fail* the gate but will fail downstream if the vault key
-      // material somehow disagrees — which it won't for the normal case.
+      // material somehow disagrees - which it won't for the normal case.
       if (!pass) {
         setError('Enter your passphrase to unlock');
         return;

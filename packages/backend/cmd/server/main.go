@@ -1,7 +1,7 @@
 // Command server is the meo.md backend HTTP daemon.
 //
 // This file is the *only* place that knows how the pieces wire
-// together — the composition root. Every dependency is constructed
+// together - the composition root. Every dependency is constructed
 // here and passed down by parameter:
 //
 //   Config → Store → (UserStore, AccountStore, NoteStore, SyncCursor)
@@ -82,7 +82,7 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	// Graceful shutdown — SIGINT/SIGTERM stops accepting new
+	// Graceful shutdown - SIGINT/SIGTERM stops accepting new
 	// connections, lets in-flight requests finish for up to 10s, then
 	// closes the DB.
 	go func() {

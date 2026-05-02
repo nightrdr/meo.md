@@ -22,7 +22,7 @@ export interface Note {
   updated_at: string;
   hlc: string;
   version: number;
-  // Agent 8 — Vault feature.
+  // Agent 8 - Vault feature.
   // When `isVault === true`, the note's body is wrapped with a second
   // AES-GCM layer keyed by `vault_key = HKDF(masterRaw, salt=user_id, info='vault:v1')`
   // before the existing per-note encryption runs. The inner ciphertext
@@ -43,7 +43,7 @@ export interface EncryptedNoteRow {
   deleted_at: number | null;
   version: number;
   size_bytes: number;
-  // Agent 8 — surfaced from meo.notes.is_vault. Lets the server-side
+  // Agent 8 - surfaced from meo.notes.is_vault. Lets the server-side
   // sync path tag rows so the client's redacted-preview rendering
   // doesn't have to peek inside ciphertext to decide.
   is_vault?: boolean;
@@ -54,7 +54,7 @@ export interface AuthLoginResponse { jwt: string; has_account: boolean; user_id:
 export interface SyncResponse { notes: EncryptedNoteRow[]; cursor: number; }
 
 // ----------------------------------------------------------------------------
-// Attachments — per spec §3.8.
+// Attachments - per spec §3.8.
 //
 // AttachmentMetadata is the *plaintext* form, never sent to the server. Its
 // AES-GCM ciphertext lives in `meo.attachments.encrypted_metadata`.

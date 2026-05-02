@@ -7,10 +7,10 @@
 // Reference: https://developer.paddle.com/webhooks/signature-verification
 //
 // Events we care about:
-//   - subscription.created    — new sub, set tier
-//   - subscription.activated  — trial → active, set tier
-//   - subscription.updated    — plan change / period rollover
-//   - subscription.canceled   — sub canceled (still active until period end)
+//   - subscription.created    - new sub, set tier
+//   - subscription.activated  - trial → active, set tier
+//   - subscription.updated    - plan change / period rollover
+//   - subscription.canceled   - sub canceled (still active until period end)
 //
 // Tier is derived from the Paddle `price_id` of the first non-trial item on
 // the subscription. Update the map below to match the live Paddle catalogue.
@@ -75,7 +75,7 @@ Deno.serve(async (req: Request) => {
   const sigHeader = req.headers.get('paddle-signature');
   if (!sigHeader) return jsonError(401, 'missing_signature');
 
-  // Read the body as text first — signature is over the *raw* body. Parsing
+  // Read the body as text first - signature is over the *raw* body. Parsing
   // before verifying would let an attacker swap whitespace and pass the check.
   const rawBody = await req.text();
   const verified = await verifyPaddleSignature(sigHeader, rawBody, secret);
@@ -95,7 +95,7 @@ Deno.serve(async (req: Request) => {
     'subscription.canceled',
   ]);
   if (!handled.has(payload.event_type)) {
-    // Unknown event types are not errors — just no-op. Paddle will retry on
+    // Unknown event types are not errors - just no-op. Paddle will retry on
     // non-2xx, and we don't want endless retries for things we ignore.
     return jsonOk({ ok: true, ignored: payload.event_type });
   }
@@ -106,7 +106,7 @@ Deno.serve(async (req: Request) => {
   const meoUserId = pickUserId(sub.custom_data);
   if (!meoUserId) return jsonError(400, 'missing_meo_user_id');
 
-  // Service-role client — used to read existing source and call the
+  // Service-role client - used to read existing source and call the
   // SECURITY DEFINER upsert RPC. Never exposed to the browser.
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -115,7 +115,7 @@ Deno.serve(async (req: Request) => {
     db: { schema: 'meo' as any },
   });
 
-  // Cross-store conflict guard — only on fresh purchases. Updates / cancels
+  // Cross-store conflict guard - only on fresh purchases. Updates / cancels
   // for an already-Paddle sub are still fine.
   if (payload.event_type === 'subscription.created') {
     const { data: existing } = await sb.rpc('subscription_source', { p_user_id: meoUserId });

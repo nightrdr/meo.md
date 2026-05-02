@@ -1,4 +1,4 @@
--- Agent 9 — QR-pairing handover protocol.
+-- Agent 9 - QR-pairing handover protocol.
 --
 -- A handover row is a 60-second-lived rendezvous between an existing
 -- device A (signed in, holds the master key) and a brand-new device B
@@ -28,7 +28,7 @@ create table if not exists meo.handovers (
   expires_at    timestamptz not null
 );
 
--- No RLS — these rows are anon-accessible by id (the id IS the bearer
+-- No RLS - these rows are anon-accessible by id (the id IS the bearer
 -- token). All access goes through the SECURITY DEFINER RPCs below,
 -- which never reveal a row past expiry.
 
@@ -46,7 +46,7 @@ security definer
 set search_path = meo, public
 as $$
 begin
-  -- 60 second TTL — short enough to be a usable rendezvous window,
+  -- 60 second TTL - short enough to be a usable rendezvous window,
   -- long enough that a slow scan or a stuck camera permission prompt
   -- won't kill the flow before the user makes it through.
   insert into meo.handovers(id, ek_a_pub, expires_at)
@@ -57,7 +57,7 @@ end;
 $$;
 
 revoke all on function meo.handover_create(uuid, bytea) from public;
--- Anyone signed in *or anon* can hit this — Device A may not yet be in
+-- Anyone signed in *or anon* can hit this - Device A may not yet be in
 -- a fresh JWT context (offline-first), and the id provides bearer-token
 -- semantics on its own.
 grant execute on function meo.handover_create(uuid, bytea) to authenticated, anon;
@@ -183,7 +183,7 @@ begin
     );
   end if;
 exception when others then
-  -- pg_cron not present or scheduler refused the job — fine, the rows
+  -- pg_cron not present or scheduler refused the job - fine, the rows
   -- simply stick around past their expires_at until something else
   -- prunes them. handover_get() still treats them as expired.
   null;

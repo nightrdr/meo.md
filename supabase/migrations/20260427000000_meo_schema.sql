@@ -1,5 +1,5 @@
 -- meo.md schema (per spec §2.2). Notes content is end-to-end encrypted before
--- it ever reaches this database — these tables hold ciphertext + metadata only.
+-- it ever reaches this database - these tables hold ciphertext + metadata only.
 
 create schema if not exists meo;
 

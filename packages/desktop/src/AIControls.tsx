@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Icon } from './Icon';
 
-// Mirrors design-mocks/components/ai-controls.jsx — the model catalogue is
+// Mirrors design-mocks/components/ai-controls.jsx - the model catalogue is
 // UI-only for now. Selecting a model persists to localStorage; actual local
 // LLM inference is deferred (per spec §3.6).
 
@@ -17,14 +17,14 @@ export interface Model {
 }
 
 export const MODELS: Model[] = [
-  // local — green
+  // local - green
   { id: 'meo-mini',     name: 'Meo Mini',          size: '1.1 GB', kind: 'local',      tag: 'Fast, on-device',  installed: true,  default: true },
   { id: 'llama-3.1-8b', name: 'Llama 3.1 8B',      size: '4.7 GB', kind: 'local',      tag: 'Balanced',         installed: true },
   { id: 'qwen-2.5-7b',  name: 'Qwen 2.5 7B',       size: '4.4 GB', kind: 'local',      tag: 'Long context',     installed: true },
   { id: 'mistral-7b',   name: 'Mistral 7B',        size: '4.1 GB', kind: 'local',      tag: 'Reasoning',        installed: false },
   { id: 'phi-3.5-mini', name: 'Phi-3.5 Mini',      size: '2.3 GB', kind: 'local',      tag: 'Lightweight',      installed: false },
   { id: 'gemma-2-9b',   name: 'Gemma 2 9B',        size: '5.4 GB', kind: 'local',      tag: 'High quality',     installed: false },
-  // commercial — red
+  // commercial - red
   { id: 'gpt-4o',        name: 'GPT-4o',             vendor: 'OpenAI',    kind: 'commercial', tag: 'Frontier' },
   { id: 'claude-sonnet', name: 'Claude Sonnet 4.5',  vendor: 'Anthropic', kind: 'commercial', tag: 'Frontier' },
   { id: 'gemini-pro',    name: 'Gemini 2.5 Pro',     vendor: 'Google',    kind: 'commercial', tag: 'Frontier' },

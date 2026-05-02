@@ -1,7 +1,7 @@
 // Package api defines HTTP handlers and the wire DTOs they exchange.
 //
 // Handlers are methods on a Server struct (see server.go) so all
-// dependencies (stores, hasher, signer) flow in via constructor —
+// dependencies (stores, hasher, signer) flow in via constructor -
 // no package globals, no service locator. Each route is a thin
 // translation layer between HTTP and the typed store API.
 package api

@@ -1,17 +1,17 @@
 // llama.rn generator backend. Mobile-only on-device LLM runtime.
 //
-// Backed by https://github.com/mybigday/llama.rn — a React Native
+// Backed by https://github.com/mybigday/llama.rn - a React Native
 // binding around llama.cpp with Metal acceleration on iOS and
 // Vulkan/OpenCL/CPU on Android. Models are GGUF files stored in the
 // app sandbox and downloaded from Hugging Face Hub on demand.
 //
 // Lifecycle:
-//   1. `LlamaRnBackend.isAvailable()` — checks that `llama.rn` is
+//   1. `LlamaRnBackend.isAvailable()` - checks that `llama.rn` is
 //      linked (it is, after `expo prebuild`) and that at least one
 //      GGUF model file exists in the models directory.
-//   2. `listModels()` — scans `<documents>/models/*.gguf` and matches
+//   2. `listModels()` - scans `<documents>/models/*.gguf` and matches
 //      filenames against the static catalogue from registry.ts.
-//   3. `stream({model, messages})` — lazily loads the matching GGUF,
+//   3. `stream({model, messages})` - lazily loads the matching GGUF,
 //      caches the LlamaContext, and pumps token deltas through the
 //      shared `Generator` interface.
 //

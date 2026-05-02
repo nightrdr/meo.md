@@ -109,7 +109,7 @@ const STOP = new Set([
 function tokenize(text: string): string[] {
   const out: string[] = [];
   // Split on non-word boundaries; keep `#` so tags survive ("#research"
-  // tokenizes to "research" but a leading "#" is dropped — tags appear
+  // tokenizes to "research" but a leading "#" is dropped - tags appear
   // in the input twice anyway via the `tags:` line).
   for (const tok of text.toLowerCase().split(/[^a-z0-9_]+/)) {
     if (!tok) continue;

@@ -15,7 +15,7 @@
 //      (http://kong:8000/storage/v1/s3 inside the network) with the local
 //      keys auto-injected by the supabase CLI.
 //
-// The function never touches the actual bytes — only the metadata row, and
+// The function never touches the actual bytes - only the metadata row, and
 // only the URL.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';

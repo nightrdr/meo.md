@@ -1,4 +1,4 @@
-// End-to-end encrypted attachments — per spec §3.8.
+// End-to-end encrypted attachments - per spec §3.8.
 //
 // Architecture:
 //   1. Client derives `attachment_key = HKDF-SHA256(master_key, "attachment:<id>")`.
@@ -28,7 +28,7 @@ import type {
 } from './types.js';
 
 // ----------------------------------------------------------------------------
-// Constants — keep in sync with the database migration & Edge Function.
+// Constants - keep in sync with the database migration & Edge Function.
 // ----------------------------------------------------------------------------
 
 export const CHUNK_SIZE = 1024 * 1024;     // 1 MiB plaintext per chunk
@@ -51,7 +51,7 @@ export const MAX_QUOTA_BYTES_PER_ACCOUNT = 1 * 1024 * 1024 * 1024;    // 1 GiB (
 // The canonical pricing matrix lives in mvp-development.md. This helper is the
 // single source of truth on the client; the server enforces the same numbers
 // in `meo.tier_limits()` (see migration `*_tier_limits.sql`). Keep the two in
-// sync — the server is authoritative and will reject over-cap writes with
+// sync - the server is authoritative and will reject over-cap writes with
 // SQLSTATE P0007 (per-attachment) or P0008 (workspace cap).
 // ----------------------------------------------------------------------------
 
@@ -74,7 +74,7 @@ export function tierLimits(tier: Tier): TierLimits {
     case 'business':
       return { maxAttachmentBytes: 1 * GIB,          totalStorageBytes: 1 * TIB };
     case 'enterprise':
-      // "Custom" — until provisioned individually, give the same headroom as Business.
+      // "Custom" - until provisioned individually, give the same headroom as Business.
       return { maxAttachmentBytes: 1 * GIB,          totalStorageBytes: 1 * TIB };
   }
 }
@@ -207,7 +207,7 @@ export async function decryptFirstChunk(
 }
 
 // ----------------------------------------------------------------------------
-// Metadata blob — separate single-shot AES-GCM with its own 12-byte nonce.
+// Metadata blob - separate single-shot AES-GCM with its own 12-byte nonce.
 // ----------------------------------------------------------------------------
 
 export async function encryptMetadata(
@@ -240,7 +240,7 @@ export async function sha256Hex(bytes: Uint8Array): Promise<string> {
 }
 
 // ----------------------------------------------------------------------------
-// AttachmentsClient — high-level surface for the editor + renderer
+// AttachmentsClient - high-level surface for the editor + renderer
 // ----------------------------------------------------------------------------
 
 export interface UploadResult {
@@ -250,7 +250,7 @@ export interface UploadResult {
 }
 
 export interface UploadInput {
-  /** Original bytes — we don't trust ArrayBuffer.byteLength alone in the wire path. */
+  /** Original bytes - we don't trust ArrayBuffer.byteLength alone in the wire path. */
   bytes: Uint8Array;
   filename: string;
   mimeType: string;

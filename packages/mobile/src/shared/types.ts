@@ -1,4 +1,4 @@
-// Mirror of packages/shared/src/types.ts — kept identical so api.ts works unchanged.
+// Mirror of packages/shared/src/types.ts - kept identical so api.ts works unchanged.
 export interface KdfParams {
   algo: 'PBKDF2';
   iters: number;
@@ -41,7 +41,7 @@ export interface AuthLoginResponse { jwt: string; has_account: boolean; user_id:
 export interface SyncResponse { notes: EncryptedNoteRow[]; cursor: number; }
 
 // ----------------------------------------------------------------------------
-// Attachments — kept identical to packages/shared/src/types.ts so cross-
+// Attachments - kept identical to packages/shared/src/types.ts so cross-
 // platform interop is mechanical.
 // ----------------------------------------------------------------------------
 export interface AttachmentMetadata {

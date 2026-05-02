@@ -9,7 +9,7 @@ export interface MenuItem {
   disabled?: boolean;
   onClick?: () => void;
   /**
-   * Nested submenu — if present, the item renders an arrow on the
+   * Nested submenu - if present, the item renders an arrow on the
    * right and pops out the submenu on hover. `onClick` is ignored
    * when `items` is non-empty.
    */
@@ -96,7 +96,7 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
 }
 
 /**
- * Submenu wrapper — hovers open a popout menu to the right of the
+ * Submenu wrapper - hovers open a popout menu to the right of the
  * parent item. Clicking a leaf entry inside fires its onClick and
  * closes the entire menu (via the parent's `onClose`).
  */

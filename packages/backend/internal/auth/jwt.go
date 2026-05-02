@@ -20,7 +20,7 @@ type Claims struct {
 }
 
 // JWTSigner signs and verifies tokens with HS256. The secret is held
-// as a value field rather than read from env on every call — passes
+// as a value field rather than read from env on every call - passes
 // inversion-of-control: tests inject a known secret, prod injects the
 // random one from config.
 type JWTSigner struct {
@@ -36,7 +36,7 @@ func NewJWTSigner(secret []byte, ttl time.Duration) *JWTSigner {
 }
 
 // Sign returns a `header.payload.sig` token. Header is the constant
-// `{"alg":"HS256","typ":"JWT"}` — kept inline rather than computed so
+// `{"alg":"HS256","typ":"JWT"}` - kept inline rather than computed so
 // the bytes are identical to what the TS server emits (different JSON
 // encoders reorder keys differently, which would break the hash).
 func (s *JWTSigner) Sign(sub, email string) (string, error) {
@@ -63,7 +63,7 @@ func (s *JWTSigner) Sign(sub, email string) (string, error) {
 }
 
 // Verify parses and validates the token. Returns ErrInvalidToken on
-// any failure — handlers translate to 401.
+// any failure - handlers translate to 401.
 func (s *JWTSigner) Verify(token string) (*Claims, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {

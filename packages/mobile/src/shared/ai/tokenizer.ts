@@ -24,7 +24,7 @@ export interface TokenizerEncoding {
 export interface EncodeOptions {
   /** Max sequence length (model dependent). Default 512 for bge-small. */
   maxLength?: number;
-  /** Pad to maxLength (default true — many runtimes require fixed shapes). */
+  /** Pad to maxLength (default true - many runtimes require fixed shapes). */
   pad?: boolean;
 }
 
@@ -44,7 +44,7 @@ export class BertTokenizer {
     this.unkId = mustGet(vocab, UNK_TOKEN);
   }
 
-  /** Build from a raw vocab.txt — one token per line, 0-indexed. */
+  /** Build from a raw vocab.txt - one token per line, 0-indexed. */
   static fromVocabText(text: string): BertTokenizer {
     const vocab = new Map<string, number>();
     let i = 0;
@@ -127,7 +127,7 @@ function mustGet(vocab: Map<string, number>, key: string): number {
 }
 
 // ----------------------------------------------------------------------------
-// Basic tokenizer — lowercases, strips control chars, splits on whitespace +
+// Basic tokenizer - lowercases, strips control chars, splits on whitespace +
 // punctuation, normalizes Unicode (NFKC).
 // ----------------------------------------------------------------------------
 

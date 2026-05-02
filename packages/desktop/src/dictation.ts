@@ -1,11 +1,11 @@
-// Native dictation via the WebSpeech API (Agent 6 — deliverable §1).
+// Native dictation via the WebSpeech API (Agent 6 - deliverable §1).
 //
 // We deliberately use `window.SpeechRecognition` / `window.webkitSpeechRecognition`
 // rather than a third-party / cloud STT provider:
 //   - macOS: delegates to the OS Speech Recognition framework
 //   - Windows 10+: delegates to the SAPI / built-in dictation engine
 //   - iOS / Android (Safari / Chrome): on-device speech engine
-//   - Linux: depends on the desktop environment — many distros lack a
+//   - Linux: depends on the desktop environment - many distros lack a
 //     SpeechRecognition implementation. We probe at module load and the
 //     editor hides the mic button when unavailable, so users never see a
 //     dead control.
@@ -13,7 +13,7 @@
 // No API keys, no network calls, no third-party dependency.
 
 // ────────────────────────────────────────────────────────────────────
-// WebSpeech typings — the DOM lib doesn't ship them yet on every TS
+// WebSpeech typings - the DOM lib doesn't ship them yet on every TS
 // version, and Chromium / Safari only expose the constructor under the
 // vendor-prefixed name. We declare the minimum surface we use.
 // ────────────────────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ export function startDictation(opts: DictationOptions): DictationSession {
   const arm = (rec: SpeechRecognitionMin) => {
     if (silenceTimer) clearTimeout(silenceTimer);
     silenceTimer = setTimeout(() => {
-      // No speech for `silenceMs` — stop cleanly. The browser already
+      // No speech for `silenceMs` - stop cleanly. The browser already
       // surfaces 'no-speech' in many cases, but we own the timer so the
       // UX is consistent across engines.
       userStopped = true;

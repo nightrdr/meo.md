@@ -1,4 +1,4 @@
--- Switch from SQLSTATE 40001 (serialization_failure — PostgREST retries this!)
+-- Switch from SQLSTATE 40001 (serialization_failure - PostgREST retries this!)
 -- to P0001 (raise_exception, the plpgsql default) so the 409 propagates
 -- immediately without retries.
 

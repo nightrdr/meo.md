@@ -1,4 +1,4 @@
-// Agent 4 — Collapse / expand sections by heading rank.
+// Agent 4 - Collapse / expand sections by heading rank.
 //
 // A TipTap extension (`meoCollapse`) that lets the user collapse a
 // section in the editor by heading rank. Sections are defined by
@@ -8,7 +8,7 @@
 //
 // Implementation notes:
 //   - The plugin keeps a `Set<number>` of collapsed heading positions
-//     (positions in the doc — they shift as content edits). The set
+//     (positions in the doc - they shift as content edits). The set
 //     is the single source of truth; decorations are derived.
 //   - To find the section's range we walk forward from the heading
 //     and stop at the first sibling heading whose level is `<=` ours,
@@ -16,13 +16,13 @@
 //   - Decorations are *node* decorations (`class: meo-collapsed-hidden`)
 //     wrapping every block between heading-end and section-end. CSS
 //     hides them via `display: none`. The underlying markdown bytes
-//     are untouched — round-trip safe.
+//     are untouched - round-trip safe.
 //   - A widget decoration adds the chevron toggle next to every heading.
 //   - Collapsed positions persist per-note via storage `meta`. The
 //     parent (Editor.tsx) restores them on note open and snapshots
 //     them on change.
 //
-// Does NOT depend on the find plugin — distinct PluginKey, distinct
+// Does NOT depend on the find plugin - distinct PluginKey, distinct
 // decoration set.
 
 import { Extension } from '@tiptap/react';
@@ -77,7 +77,7 @@ function findSectionEnd(doc: PMNode, headingPos: number, level: number): number 
 /** Build the decoration set from the current collapsed set. */
 function buildDecorations(doc: PMNode, collapsed: Set<number>): DecorationSet {
   const decos: Decoration[] = [];
-  // Collect (pos, node) for every heading once — cheaper than descending
+  // Collect (pos, node) for every heading once - cheaper than descending
   // the tree multiple times.
   const headings: { pos: number; level: number; node: PMNode }[] = [];
   doc.descendants((node, pos) => {
@@ -88,7 +88,7 @@ function buildDecorations(doc: PMNode, collapsed: Set<number>): DecorationSet {
     return true;
   });
 
-  // Toggle widgets for every heading (always shown — CSS hover controls
+  // Toggle widgets for every heading (always shown - CSS hover controls
   // visibility). The widget element captures clicks and dispatches a
   // toggle transaction.
   for (const h of headings) {
@@ -104,12 +104,12 @@ function buildDecorations(doc: PMNode, collapsed: Set<number>): DecorationSet {
 
   // For every COLLAPSED heading, hide everything from heading-end to
   // section-end. We find the section end by skipping any nested
-  // collapsed headings — but a single inline decoration covering the
+  // collapsed headings - but a single inline decoration covering the
   // whole range with `display: none` does that automatically because
   // the children are inside the hidden block.
   for (const pos of collapsed) {
     const h = headings.find(x => x.pos === pos);
-    if (!h) continue; // stale position (heading was deleted) — ignore
+    if (!h) continue; // stale position (heading was deleted) - ignore
     const headingEnd = pos + h.node.nodeSize;
     const sectionEnd = findSectionEnd(doc, pos, h.level);
     if (sectionEnd <= headingEnd) continue;
@@ -135,7 +135,7 @@ function buildDecorations(doc: PMNode, collapsed: Set<number>): DecorationSet {
 function countTopLevelChildren(doc: PMNode, from: number, to: number): number {
   let count = 0;
   doc.nodesBetween(from, to, (_node, pos) => {
-    // Only count direct doc children — depth 1 — by checking that
+    // Only count direct doc children - depth 1 - by checking that
     // the node's parent is the doc. Cheap proxy: any block whose
     // start position equals the start of a top-level slice.
     if (pos >= from && pos < to) {
@@ -208,7 +208,7 @@ export const MeoCollapseExtension = Extension.create({
             let changed = collapsed !== prev.collapsed;
             if (meta) {
               if (meta.set !== undefined) {
-                // Restore from persistence — filter to positions that
+                // Restore from persistence - filter to positions that
                 // actually point at a heading right now.
                 const next = new Set<number>();
                 for (const pos of meta.set) {

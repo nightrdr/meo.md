@@ -223,11 +223,11 @@ otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
 otp_expiry = 3600
 
-# ─── Production SMTP — Resend ────────────────────────────────────────
+# ─── Production SMTP - Resend ────────────────────────────────────────
 #
 # Default (this block COMMENTED): GoTrue routes outbound email to the
 #   bundled Inbucket / Mailpit container at http://127.0.0.1:54324.
-#   Useful in local dev — codes never leave your machine.
+#   Useful in local dev - codes never leave your machine.
 #
 # Enable Resend (for staging / prod):
 #   1. Sign up at resend.com, generate an API key (starts with "re_").
@@ -380,8 +380,8 @@ allow_dynamic_registration = false
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.
-# `per_worker` (default) — enables hot reload during local development.
-# `oneshot` — fallback mode if hot reload causes issues (e.g. in large repos or with symlinks).
+# `per_worker` (default) - enables hot reload during local development.
+# `oneshot` - fallback mode if hot reload causes issues (e.g. in large repos or with symlinks).
 policy = "per_worker"
 # Port to attach the Chrome inspector for debugging edge functions.
 inspector_port = 8083

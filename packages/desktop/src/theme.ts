@@ -1,4 +1,4 @@
-// meo.md theme — warm paper-minimal palette from the design mocks.
+// meo.md theme - warm paper-minimal palette from the design mocks.
 // Mirrors design-mocks/components/theme.jsx (the source of truth).
 
 export const MEO = {
@@ -15,12 +15,12 @@ export const MEO = {
   ink3:        '#8A8375',
   ink4:        '#B8B0A0',
 
-  // accent — single mossy green
+  // accent - single mossy green
   accent:      '#4F6B3A',
   accentSoft:  '#D9E0C7',
   accentInk:   '#2C3D1E',
 
-  // AI tint — rust
+  // AI tint - rust
   ai:          '#B4632A',
   aiSoft:      '#F4E2CB',
 

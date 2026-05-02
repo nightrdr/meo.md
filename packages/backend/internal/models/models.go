@@ -96,7 +96,7 @@ func (c *Catalogue) Get(id string) *ManifestEntry {
 
 // SetSHA256 updates the expected hash for a model. Used after an
 // admin upload computes the real hash so subsequent uploads can be
-// verified. In-memory only — the JSON file on disk is the source of
+// verified. In-memory only - the JSON file on disk is the source of
 // truth for what's *expected*; SetSHA256 is a runtime override for
 // dev / first-time-population workflows.
 func (c *Catalogue) SetSHA256(id, hex string) bool {
@@ -119,7 +119,7 @@ func (c *Catalogue) SetSHA256(id, hex string) bool {
 //	<root>/<id>.bin
 //
 // We don't preserve original filenames because the manifest is the
-// source of truth — the client only ever sees /models/<id>/file.
+// source of truth - the client only ever sees /models/<id>/file.
 type Store struct {
 	root string
 }
@@ -136,7 +136,7 @@ func NewStore(root string) (*Store, error) {
 }
 
 // Path returns the absolute path where this id's binary lives.
-// Callers should treat this as opaque — the format is internal.
+// Callers should treat this as opaque - the format is internal.
 func (s *Store) Path(id string) string {
 	return filepath.Join(s.root, id+".bin")
 }

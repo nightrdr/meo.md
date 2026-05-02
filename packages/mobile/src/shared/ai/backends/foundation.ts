@@ -3,11 +3,11 @@
 // iOS 18+ ships an in-OS LLM via the FoundationModels framework.
 // Hooking it up requires a small Swift native module (Pod) that
 // bridges `LanguageModelSession` → React Native. That module isn't
-// shipped yet — this file provides:
+// shipped yet - this file provides:
 //
-//   1. `isFoundationModelsAvailable()` — JS-side gating used by the
+//   1. `isFoundationModelsAvailable()` - JS-side gating used by the
 //      registry to decide whether to *list* the system-os model.
-//   2. `FoundationBackend` — implements `Generator` so the chain in
+//   2. `FoundationBackend` - implements `Generator` so the chain in
 //      `aiStore.ts` is uniform; `isAvailable()` always returns false
 //      until a real native module is linked, so we never silently
 //      try and fail.
@@ -69,7 +69,7 @@ export function isFoundationModelsCapable(): boolean {
   return Number.isFinite(v) && v >= 18;
 }
 
-/** Live availability — capability AND the native module is linked AND the OS reports the model is ready. */
+/** Live availability - capability AND the native module is linked AND the OS reports the model is ready. */
 export async function isFoundationModelsAvailable(): Promise<boolean> {
   if (!isFoundationModelsCapable()) return false;
   const h = tryLoadFoundationModule();

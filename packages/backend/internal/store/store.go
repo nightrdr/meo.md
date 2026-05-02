@@ -18,7 +18,7 @@ import (
 
 // Store is the root handle. Sub-stores hang off it as fields so the
 // composition root constructs them once and passes the typed values
-// down — no service locator.
+// down - no service locator.
 type Store struct {
 	DB             *sql.DB
 	Users          *UserStore
@@ -32,7 +32,7 @@ type Store struct {
 func Open(path string) (*Store, error) {
 	// modernc.org/sqlite registers the driver as "sqlite". The DSN
 	// supports `?_pragma=foo(bar)` to apply pragmas at connection
-	// time — but we'd rather do it explicitly here so the test reads
+	// time - but we'd rather do it explicitly here so the test reads
 	// the same as the runtime path.
 	db, err := sql.Open("sqlite", path)
 	if err != nil {

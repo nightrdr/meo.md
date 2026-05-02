@@ -51,7 +51,7 @@ func (s *AccountStore) Exists(userID string) (bool, error) {
 }
 
 // Create inserts a wrapper. Returns ErrConflict if one already exists
-// (matches the TS behavior of refusing to overwrite — a re-init has
+// (matches the TS behavior of refusing to overwrite - a re-init has
 // to come through a separate flow).
 func (s *AccountStore) Create(a *Account) error {
 	_, err := s.db.Exec(

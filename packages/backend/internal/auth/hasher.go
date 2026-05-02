@@ -3,10 +3,10 @@
 // Two structs, two responsibilities, both injected as interfaces into
 // the API layer:
 //
-//   - Hasher    — scrypt-based password hash, format-compatible with
+//   - Hasher    - scrypt-based password hash, format-compatible with
 //                 the TypeScript node:crypto/scrypt output so existing
 //                 password_hash rows decode.
-//   - JWTSigner — HS256 JWT, base64url(no-pad) parts, identical wire
+//   - JWTSigner - HS256 JWT, base64url(no-pad) parts, identical wire
 //                 format to the TS server.
 package auth
 
@@ -22,7 +22,7 @@ import (
 	"golang.org/x/crypto/scrypt"
 )
 
-// scrypt parameters — must match the TS server (src/auth.ts).
+// scrypt parameters - must match the TS server (src/auth.ts).
 // Changing them invalidates every existing password hash unless we
 // store the params alongside (which the format string already does
 // for the active value, so a future bump is a non-event).
@@ -33,7 +33,7 @@ const (
 	keyLen  = 32
 )
 
-// Hasher hashes and verifies passwords. Stateless — kept as a struct
+// Hasher hashes and verifies passwords. Stateless - kept as a struct
 // purely so the API layer takes a value, not a free function. Makes
 // testing with a fake hasher trivial.
 type Hasher struct{}
@@ -92,6 +92,6 @@ func (h *Hasher) Verify(password, stored string) bool {
 
 // ErrBadHash is reserved for future use (e.g. distinguishing parse
 // failure from mismatch in callers that care). Verify currently only
-// returns bool — keeping an error surface here so the interface stays
+// returns bool - keeping an error surface here so the interface stays
 // extensible without breaking callers.
 var ErrBadHash = errors.New("bad password hash format")

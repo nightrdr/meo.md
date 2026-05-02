@@ -61,7 +61,7 @@ export function AIPanel({ notes, modelId, onClose, onOpenNote }: Props) {
       }
     })();
     return () => { alive = false; };
-    // We deliberately don't depend on notes here — rebuild is idempotent
+    // We deliberately don't depend on notes here - rebuild is idempotent
     // and re-runs only on dep change (we'll handle hot updates separately).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelId]);

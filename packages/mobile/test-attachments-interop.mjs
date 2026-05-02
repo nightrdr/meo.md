@@ -92,7 +92,7 @@ const mobileClient = mobile.createAttachmentsClient(SUPABASE_URL, SUPABASE_ANON_
 const desktopClient = desktop.createAttachmentsClient(SUPABASE_URL, SUPABASE_ANON_KEY, login.jwt, masterRaw, `${SUPABASE_URL}/functions/v1`);
 
 // Mobile uploads via .functions.invoke. The Edge Functions runtime listens
-// on the same port but a different endpoint shape — point the client at it.
+// on the same port but a different endpoint shape - point the client at it.
 mobileClient['functionsBaseUrl'] = `${SUPABASE_URL}/functions/v1`;
 
 // ── Test 1: mobile-encrypted bytes decrypt on desktop ────────────────────

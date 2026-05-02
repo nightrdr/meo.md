@@ -1,6 +1,6 @@
 // Biometric / OS-keychain wrap-key plugin (Agent 1).
 //
-// Threat model — see `mvp-development.md` and the Agent 1 brief.
+// Threat model - see `mvp-development.md` and the Agent 1 brief.
 // We never store the master encryption key at rest. Instead, on the
 // first successful passphrase+SecretKey unlock the JS layer:
 //
@@ -16,7 +16,7 @@
 // the OS biometric prompt. If the user passes, we hand the wrap_key
 // back to JS, which decrypts the blob and rebuilds the in-memory
 // session. Anyone with physical access + valid biometric can unlock
-// — same threat model as 1Password / Bitwarden quick-unlock. The
+// - same threat model as 1Password / Bitwarden quick-unlock. The
 // encrypted notes remain safe against passive attackers and stolen
 // disk images.
 //
@@ -58,7 +58,7 @@ pub async fn biometric_available() -> Result<bool, String> {
 //
 // We use Security.framework directly because `security-framework`'s
 // high-level ItemAddOptions doesn't expose `kSecAttrAccessControl`,
-// and that's the whole point — without the userPresence ACL the
+// and that's the whole point - without the userPresence ACL the
 // keychain entry would be readable without the biometric prompt.
 
 #[cfg(target_os = "macos")]
@@ -134,7 +134,7 @@ mod platform {
 
         // Build a SecAccessControl requiring user presence. The
         // userPresence flag combines Touch ID, Watch unlock and a
-        // login-password fallback — the OS picks the best available.
+        // login-password fallback - the OS picks the best available.
         let access = SecAccessControl::create_with_protection(
             Some(ProtectionMode::AccessibleWhenUnlockedThisDeviceOnly),
             kSecAccessControlUserPresence,
@@ -143,7 +143,7 @@ mod platform {
 
         // Best-effort: clear any stale entry first. SecItemAdd would
         // fail with `errSecDuplicateItem` otherwise. We don't
-        // propagate clear errors — the caller's intent is "set this
+        // propagate clear errors - the caller's intent is "set this
         // to the new value", a stale unreadable entry shouldn't block.
         let _ = clear(key_id);
 
@@ -341,7 +341,7 @@ mod platform {
 // on most Linux desktops anyway. Tracked as a follow-on: a future
 // agent could plumb in `secret-service` for at-rest protection
 // without biometric, but the security model would be no different
-// than what the JWT cookie already gives — punt for v1.0.
+// than what the JWT cookie already gives - punt for v1.0.
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 mod platform {
     pub fn available() -> bool {

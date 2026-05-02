@@ -1,4 +1,4 @@
-# Backend — meo.md API (MVP)
+# Backend - meo.md API (MVP)
 
 Node + Hono + better-sqlite3. Single process, single SQLite file. Replaces
 the self-hosted Supabase stack for MVP; same endpoint shape so a swap to
@@ -44,7 +44,7 @@ CREATE TABLE sync_cursor (
 );
 ```
 
-`version` is monotonic per user — we increment `sync_cursor.next_version`
+`version` is monotonic per user - we increment `sync_cursor.next_version`
 under a transaction on each upsert. Clients pass `?since=<version>` to get
 all updates strictly greater than their cursor.
 
@@ -90,7 +90,7 @@ Tombstones. Server sets `deleted_at`, increments version.
 Every query filters by `user_id = jwt.sub`. There is no admin endpoint.
 
 ## Out of MVP
-- Realtime / WebSocket (`/sync/realtime`) — polling only.
+- Realtime / WebSocket (`/sync/realtime`) - polling only.
 - AI proxy (separate service in spec §2.5).
 - Paddle billing (`/billing/*`).
 - Attachments (`/attachments/*`).

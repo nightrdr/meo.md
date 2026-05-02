@@ -1,4 +1,4 @@
-// tfa-enroll — Agent 8.
+// tfa-enroll - Agent 8.
 //
 // Generates a fresh 20-byte TOTP secret for the caller, stores it server-side
 // encrypted with TFA_KEK (32-byte hex env var), and returns the otpauth URL
@@ -59,7 +59,7 @@ Deno.serve(async (req: Request) => {
   const key = await crypto.subtle.importKey('raw', kek, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
   const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce }, key, secret));
 
-  // Service-role write (bypasses RLS — there's no client policy on this table).
+  // Service-role write (bypasses RLS - there's no client policy on this table).
   const sb = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
     db: { schema: 'meo' as any },
@@ -74,7 +74,7 @@ Deno.serve(async (req: Request) => {
   }, { onConflict: 'user_id' });
   if (upErr) return jsonError(500, `db_error: ${upErr.message}`);
 
-  // otpauth URL — `meo.md` is both label namespace and issuer.
+  // otpauth URL - `meo.md` is both label namespace and issuer.
   const label = encodeURIComponent(`meo.md:${email}`);
   const params = new URLSearchParams();
   params.set('secret', secretB32);

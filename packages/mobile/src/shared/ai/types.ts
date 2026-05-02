@@ -11,9 +11,9 @@ export interface Model {
   name: string;
   kind: ModelKind;
   tag: string;                  // UI subtitle, e.g. "Fast, on-device"
-  size?: string;                // human-readable, e.g. "1.1 GB" — local-gguf only
+  size?: string;                // human-readable, e.g. "1.1 GB" - local-gguf only
   vendor?: string;              // cloud-only, e.g. "OpenAI"
-  installed?: boolean;          // local-gguf only — runtime-resolved
+  installed?: boolean;          // local-gguf only - runtime-resolved
   default?: boolean;            // marks the recommended default per platform
 }
 
@@ -154,7 +154,7 @@ export function formatNoteForEmbedding(note: Note): string {
 
 /**
  * Stable hash for change-detection. Re-embed when this changes.
- * Uses @noble/hashes for SHA-256 — portable across browser, Node, and
+ * Uses @noble/hashes for SHA-256 - portable across browser, Node, and
  * RN (which doesn't ship crypto.subtle on Hermes).
  */
 import { sha256 } from '@noble/hashes/sha256';

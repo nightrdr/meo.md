@@ -1,4 +1,4 @@
-// RevenueCat webhook handler (mobile tier — App Store / Play Store).
+// RevenueCat webhook handler (mobile tier - App Store / Play Store).
 //
 // RevenueCat doesn't HMAC-sign its webhooks; instead it lets you set a fixed
 // `Authorization: Bearer <token>` header on the platform side, which we
@@ -6,13 +6,13 @@
 // RevenueCat dashboard's webhook configuration.
 //
 // Events we care about:
-//   - INITIAL_PURCHASE  — first purchase (or first restore on a fresh install)
-//   - RENEWAL           — auto-renewal succeeded
-//   - CANCELLATION      — user canceled (still active until expires_date)
-//   - EXPIRATION        — actually expired, drop to free
-//   - BILLING_ISSUE     — auto-renew failed; we keep the tier and flag cancel_at_period_end
+//   - INITIAL_PURCHASE  - first purchase (or first restore on a fresh install)
+//   - RENEWAL           - auto-renewal succeeded
+//   - CANCELLATION      - user canceled (still active until expires_date)
+//   - EXPIRATION        - actually expired, drop to free
+//   - BILLING_ISSUE     - auto-renew failed; we keep the tier and flag cancel_at_period_end
 //
-// `app_user_id` MUST equal our meo `user_id` — the mobile client sets this via
+// `app_user_id` MUST equal our meo `user_id` - the mobile client sets this via
 // `Purchases.logIn(userId)` immediately after auth. RC also exposes
 // `original_app_user_id`; we prefer the stable `app_user_id`.
 //
@@ -102,7 +102,7 @@ Deno.serve(async (req: Request) => {
     db: { schema: 'meo' as any },
   });
 
-  // Cross-store conflict guard — only on a fresh purchase.
+  // Cross-store conflict guard - only on a fresh purchase.
   if (ev.type === 'INITIAL_PURCHASE') {
     const { data: existing } = await sb.rpc('subscription_source', { p_user_id: meoUserId });
     const row = Array.isArray(existing) ? existing[0] : existing;

@@ -9,7 +9,7 @@
 //   useEditor({ extensions: [..., AttachmentImageExtension] });
 //
 // The renderer reads the active session from a window-level context (see
-// `getAttachmentsContext` below) — App.tsx is expected to populate
+// `getAttachmentsContext` below) - App.tsx is expected to populate
 // `(window as any).__meoAttachmentsContext = { masterRaw, jwt, supabaseUrl, supabaseAnonKey }`
 // once the user has unlocked.
 
@@ -23,7 +23,7 @@ import {
 import { createClient } from '@supabase/supabase-js';
 
 // Heuristic mime sniff used by the URL-paste insert path. We trust the file
-// extension (no network probe), since the value is purely cosmetic — the
+// extension (no network probe), since the value is purely cosmetic - the
 // browser will pick the actual codec when it loads the URL.
 function mimeFromExt(url: string, fallback: string): string {
   const m = url.toLowerCase().match(/\.([a-z0-9]+)(?:\?|#|$)/);
@@ -82,7 +82,7 @@ export function makeAttachmentsClient(): AttachmentsClient | null {
 }
 
 // ----------------------------------------------------------------------------
-// TipTap node — replaces the StarterKit's image (StarterKit doesn't include
+// TipTap node - replaces the StarterKit's image (StarterKit doesn't include
 // images by default in our config; we add this one explicitly).
 // ----------------------------------------------------------------------------
 
@@ -118,7 +118,7 @@ export const AttachmentImageExtension = Node.create({
 });
 
 // ----------------------------------------------------------------------------
-// React node view — handles plain image URLs (just renders <img>) AND the
+// React node view - handles plain image URLs (just renders <img>) AND the
 // custom `attachment:<id>` URLs (decrypts then renders).
 // ----------------------------------------------------------------------------
 
@@ -174,7 +174,7 @@ function DecryptedImage({ attachmentId, alt }: { attachmentId: string; alt: stri
   );
 }
 
-// Shared decrypt-to-blob-URL hook — used by image, video, and audio node views.
+// Shared decrypt-to-blob-URL hook - used by image, video, and audio node views.
 function useDecryptedAttachment(attachmentId: string):
   | { kind: 'loading' }
   | { kind: 'ready'; url: string; metadata: AttachmentMetadata }
@@ -202,7 +202,7 @@ function useDecryptedAttachment(attachmentId: string):
         if (cancelled) return;
         // Use the metadata-recorded mime so the browser picks the right
         // codec (mp4 vs webm, mp3 vs wav, etc.). Fall back to
-        // application/octet-stream if missing — the <video>/<audio>
+        // application/octet-stream if missing - the <video>/<audio>
         // tag will then refuse to play, which is the correct signal.
         const blob = new Blob([bytes as BlobPart], { type: metadata.mime_type || 'application/octet-stream' });
         const url = URL.createObjectURL(blob);
@@ -226,7 +226,7 @@ function useDecryptedAttachment(attachmentId: string):
 }
 
 // ────────────────────────────────────────────────────────────────────
-// Video — TipTap node for `<video src controls></video>`. Roundtrips
+// Video - TipTap node for `<video src controls></video>`. Roundtrips
 // through markdown as raw HTML (CommonMark allows inline HTML), which
 // preserves both URL-pasted videos and `attachment:<id>` videos
 // without a custom syntax.
@@ -280,7 +280,7 @@ function VideoNodeView({ node }: NodeViewProps) {
 }
 
 // ────────────────────────────────────────────────────────────────────
-// Audio — same pattern as Video, just an <audio> element.
+// Audio - same pattern as Video, just an <audio> element.
 // ────────────────────────────────────────────────────────────────────
 
 export const AttachmentAudioExtension = Node.create({

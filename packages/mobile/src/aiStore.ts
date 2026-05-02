@@ -4,7 +4,7 @@
 //
 // Phase 3.5 ships:
 //   - NoopEmbedder still in place (BM25 carries retrieval, vector
-//     contributes nothing — see specs/05-llm-architecture.md §6.1
+//     contributes nothing - see specs/05-llm-architecture.md §6.1
 //     for the gap on the embedder side and embeddings.ts for the
 //     reasoning).
 //   - op-sqlite vector store (`note_vectors` table, see
@@ -13,7 +13,7 @@
 //   - In-memory BM25 over decrypted notes.
 //   - LlamaRnBackend (Metal on iOS, Vulkan/OpenCL/CPU on Android)
 //     preferred, with OllamaBackend as a developer fallback.
-//   - FoundationBackend for iOS 18+ — visible-but-unavailable until
+//   - FoundationBackend for iOS 18+ - visible-but-unavailable until
 //     the Swift native module lands.
 //
 // `getAIRuntime()` lazily picks the highest-priority backend that
@@ -62,7 +62,7 @@ export async function getAIRuntime(): Promise<MobileAIRuntime> {
 export function peekAIRuntime(): MobileAIRuntime | null { return cached; }
 export function clearAIRuntime(): void {
   // Drop the ONNX session if we held one. Releasing the native handle
-  // is best-effort — the next build() will create a fresh one anyway.
+  // is best-effort - the next build() will create a fresh one anyway.
   A.clearEmbedderCache();
   cached = null;
 }
@@ -71,7 +71,7 @@ async function build(): Promise<MobileAIRuntime> {
   // The user opts into the real embedder via Settings → AI. Downloading
   // the bge-small files is a separate explicit step (33 MB). If the
   // flag is on but files are missing, fall back to NoopEmbedder so the
-  // runtime still boots — BM25 still works and Settings shows what to
+  // runtime still boots - BM25 still works and Settings shows what to
   // do.
   let useReal = await getUseRealEmbedder();
   if (useReal) {
@@ -104,7 +104,7 @@ async function build(): Promise<MobileAIRuntime> {
     vectorStore = new A.InMemoryVectorEngine();
   }
 
-  // Generator chain. Order matters — the first one that reports
+  // Generator chain. Order matters - the first one that reports
   // available wins. See specs/05-llm-architecture.md §3.
   const llama = new A.LlamaRnBackend();
   const ollama = new A.OllamaBackend();

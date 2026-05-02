@@ -1,7 +1,7 @@
-# meo.md — working MVP
+# meo.md - working MVP
 
 A privacy-first, end-to-end encrypted markdown notes app with multi-device sync.
-This repo is a scoped MVP of the [full v1 spec](./meo-md-spec.docx) — see
+This repo is a scoped MVP of the [full v1 spec](./meo-md-spec.docx) - see
 [`specs/00-mvp-scope.md`](./specs/00-mvp-scope.md) for what is and isn't built.
 
 ## What works end-to-end
@@ -19,7 +19,7 @@ This repo is a scoped MVP of the [full v1 spec](./meo-md-spec.docx) — see
 - **Cross-platform interop**: notes encrypted on mobile decrypt on desktop
   and vice versa (verified by automated tests).
 - **Server holds only ciphertext**: the SQLite blob is opaque to anyone with
-  DB access — verified by inspecting the running database.
+  DB access - verified by inspecting the running database.
 
 ## Layout
 
@@ -55,7 +55,7 @@ cd packages/mobile && npm install --legacy-peer-deps && cd -
 ### 2. Bring up the data layer
 
 The recommended path (matches the spec) is **self-hosted Supabase via the
-Supabase CLI** — full Postgres + GoTrue + PostgREST + Realtime + Storage
+Supabase CLI** - full Postgres + GoTrue + PostgREST + Realtime + Storage
 locally in Docker.
 
 ```bash
@@ -69,7 +69,7 @@ supabase start
 # When done, supabase status prints the API URL + anon key. The schema is
 # auto-applied from supabase/migrations/.
 
-# Wire the desktop app to it — write a .env.local:
+# Wire the desktop app to it - write a .env.local:
 cd packages/desktop
 KEY=$(supabase status | grep Publishable | awk '{print $4}')
 cat > .env.local <<EOF
@@ -104,11 +104,11 @@ Open http://localhost:5173.
 
 **Option B: as a native window (Tauri 2.x)**
 
-This is the production shell — a real macOS / Windows / Linux app window with
+This is the production shell - a real macOS / Windows / Linux app window with
 no browser chrome. Requires Rust via rustup (one-time setup):
 
 ```bash
-# Install rustup once if you don't have it (Homebrew's cargo is not enough —
+# Install rustup once if you don't have it (Homebrew's cargo is not enough -
 # Tauri's CLI specifically needs rustup to detect the target triple):
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
 . "$HOME/.cargo/env"
@@ -116,7 +116,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --defaul
 # Start Vite (serves the UI on :5173) in one terminal:
 npm --workspace @meo/desktop run dev
 
-# Start Tauri in a second terminal — opens the native window:
+# Start Tauri in a second terminal - opens the native window:
 npm --workspace @meo/desktop run tauri:dev
 
 # To produce a distributable .app / .dmg / .msi / .deb / .AppImage:
@@ -125,10 +125,10 @@ npm --workspace @meo/desktop run tauri:build
 ```
 
 The first `tauri dev` compile downloads + builds wry, tao, and the rest of
-the Tauri runtime — expect 5–10 minutes. Subsequent runs are seconds.
+the Tauri runtime - expect 5–10 minutes. Subsequent runs are seconds.
 
 In either mode: click "Create an account", set up encryption, and **save the
-Secret Key** that's displayed — you'll need it to unlock from another device.
+Secret Key** that's displayed - you'll need it to unlock from another device.
 Refreshing / restarting logs you out (master key is in-memory only, by design).
 
 ### 4. Run the mobile app
@@ -152,10 +152,10 @@ All tests are runnable from the repo root once `npm install` has been done.
 # 1. Crypto unit tests (round-trip, wrong-passphrase rejection, HLC)
 node packages/shared/test-crypto.mjs
 
-# 2. Backend (Hono fallback) end-to-end — start backend on :8787 first
+# 2. Backend (Hono fallback) end-to-end - start backend on :8787 first
 node packages/backend/test-e2e.mjs
 
-# 3. Supabase end-to-end — supabase must be running
+# 3. Supabase end-to-end - supabase must be running
 SUPABASE_ANON_KEY=$(supabase status | grep Publishable | awk '{print $4}') \
   node packages/shared/test-supabase-e2e.mjs
 
@@ -180,11 +180,11 @@ checks).
 2. The **master key** is wrapped at rest with AES-256-GCM under the unlock
    key, then sent to the server. Server stores only the wrapper.
 3. **Per-note keys** are HKDF-derived from `(master_key, "note:" || note_id)`
-   — compromise of one note's key cannot decrypt others.
+   - compromise of one note's key cannot decrypt others.
 4. Note plaintext (title, body, folder, tags, links) is JSON-serialized,
    AES-GCM-encrypted with the per-note key, and stored as an opaque blob.
 5. **HLC timestamps** order writes; concurrent writes are last-write-wins by
-   HLC (with a "Conflicted copy" fallback path planned per spec — not implemented in MVP UI).
+   HLC (with a "Conflicted copy" fallback path planned per spec - not implemented in MVP UI).
 
 ## Verifying the privacy claim
 
@@ -195,22 +195,22 @@ sqlite3 packages/backend/meo.sqlite \
   "SELECT id, length(encrypted_content) AS bytes, hex(substr(encrypted_content, 1, 32)) AS first32 FROM notes;"
 ```
 
-You'll see the row id, ciphertext length, and the first 32 hex bytes —
+You'll see the row id, ciphertext length, and the first 32 hex bytes -
 which look uniformly random. The note's title and body are nowhere in
 plaintext on the server.
 
 ## Design
 
-The desktop UI follows the **Meo** design — a warm paper-minimal aesthetic
+The desktop UI follows the **Meo** design - a warm paper-minimal aesthetic
 (see `design-mocks/`). Palette and typography:
 
 - Surfaces: warm paper `#F6F2EA`, sidebar `#EFE9DD`, raised overlays `#FFFBF3`.
 - Ink: primary `#1F1C17`, secondary `#4A443B`, muted `#8A8375`.
 - Accent: mossy green `#4F6B3A` (single accent across selection, focus, brand dot).
-- AI tint: rust `#B4632A` with `#F4E2CB` soft fill — used for the "Ask Meo"
+- AI tint: rust `#B4632A` with `#F4E2CB` soft fill - used for the "Ask Meo"
   pill and AI affordances.
 - Body: Source Serif 4 16/1.65. UI: Inter. Code/keys: JetBrains Mono.
-- Logo: `MeoMark` — a filleted-square ink badge with a serif "M" notch and
+- Logo: `MeoMark` - a filleted-square ink badge with a serif "M" notch and
   green accent dot.
 
 Three-pane layout (sidebar 232px / list 300px / editor flex). Source of
@@ -224,19 +224,19 @@ the surface tokens automatically via `prefers-color-scheme`.
 | Auth (signup, login, encryption setup) | ✓ | ✓ |
 | Supabase backend (Postgres + GoTrue + PostgREST + RLS) | ✓ | ✓ |
 | Per-note AES-GCM E2EE | ✓ | ✓ |
-| Folder tree + sub-folders + creation | ✓ | ✓ — `+` next to FOLDERS opens a bottom-sheet prompt; long-press a folder for New sub-folder / Rename / Delete |
-| Tags (per-note + sidebar list) | ✓ | ✓ — per-note add/remove, sidebar tag chips, long-press for filter / remove-from-all |
-| Contextual right-click / long-press menus | ✓ | ✓ — ActionSheet covers note / folder / tag, mirroring the desktop ContextMenu items |
-| ⌘K / search overlay | ✓ | ✓ — full-screen modal, same notes/folders/tags ranking |
-| Markdown editor toolbar (Edit/Split/Preview, headings, lists, etc.) | ✓ TipTap | basic — bottom toolbar with bold/italic/list/h1/checklist + Ask Meo (placeholder) |
-| Three-pane (desktop) / drilldown navigation (mobile) | ✓ | ✓ — Meo design system, MeoMark, warm paper, serif body |
+| Folder tree + sub-folders + creation | ✓ | ✓ - `+` next to FOLDERS opens a bottom-sheet prompt; long-press a folder for New sub-folder / Rename / Delete |
+| Tags (per-note + sidebar list) | ✓ | ✓ - per-note add/remove, sidebar tag chips, long-press for filter / remove-from-all |
+| Contextual right-click / long-press menus | ✓ | ✓ - ActionSheet covers note / folder / tag, mirroring the desktop ContextMenu items |
+| ⌘K / search overlay | ✓ | ✓ - full-screen modal, same notes/folders/tags ranking |
+| Markdown editor toolbar (Edit/Split/Preview, headings, lists, etc.) | ✓ TipTap | basic - bottom toolbar with bold/italic/list/h1/checklist + Ask Meo (placeholder) |
+| Three-pane (desktop) / drilldown navigation (mobile) | ✓ | ✓ - Meo design system, MeoMark, warm paper, serif body |
 | Ask Meo panel (right drawer / bottom sheet) | ✓ wired to Ollama with full RAG (BM25 + vector + RRF + MMR + citations) | ✓ wired to Ollama with same RAG plumbing; default embedder is no-op so BM25 carries retrieval until phase 3.5 swaps in `transformers-rn` |
-| Slash menu in editor | ✓ | not yet — keyboard-toolbar `/` button planned, lower priority than 3.5 |
+| Slash menu in editor | ✓ | not yet - keyboard-toolbar `/` button planned, lower priority than 3.5 |
 | Local LLM via Ollama / llama.rn | ✓ Ollama | ✓ `llama.rn` shipped (Metal/Vulkan/OpenCL). GGUF model registry + downloads via HF Hub. Needs an iOS simulator or device for `expo run:ios` to actually launch. |
 | BM25 + vector + RRF + MMR retrieval | ✓ | ✓ (BM25 + RRF; vector contributes nothing until phase 3.5 real embedder) |
 | Local embeddings (bge-small-en-v1.5) | ✓ | runtime installed (`onnxruntime-react-native`); WordPiece tokenizer + ONNX file is the remaining wiring. `NoopEmbedder` default; BM25 carries retrieval. |
-| Settings → AI screen (model install, embeddings status) | ✓ | ✓ — Local GGUF download (Wi-Fi + resumable + progress) + Apple Intelligence row on iOS 18+ + Embeddings progress |
-| **Attachments** (E2EE images / files via iDrive S3 + MinIO local fallback) | ✓ — file picker, drag-and-drop, encrypted at rest, custom TipTap renderer | shared crypto pipeline ready; mobile file-picker UI is a small follow-up |
+| Settings → AI screen (model install, embeddings status) | ✓ | ✓ - Local GGUF download (Wi-Fi + resumable + progress) + Apple Intelligence row on iOS 18+ + Embeddings progress |
+| **Attachments** (E2EE images / files via iDrive S3 + MinIO local fallback) | ✓ - file picker, drag-and-drop, encrypted at rest, custom TipTap renderer | shared crypto pipeline ready; mobile file-picker UI is a small follow-up |
 
 The architecture for the not-yet-mobile features is locked in
 [`specs/05-llm-architecture.md`](specs/05-llm-architecture.md). Mobile
@@ -249,12 +249,12 @@ modules are platform-agnostic except for the embedder runtime
 This is an MVP, not a release. Notable gaps versus the master spec:
 
 - **Argon2id → PBKDF2** (computational, not memory-hard)
-- **Native menubar, Spotlight, biometrics** — desktop runs in Tauri but
+- **Native menubar, Spotlight, biometrics** - desktop runs in Tauri but
   shell-only; native integrations are deferred
-- **TenTap** — mobile uses a plain monospace TextInput
-- **No realtime / WebSocket** — polling every 10s instead
+- **TenTap** - mobile uses a plain monospace TextInput
+- **No realtime / WebSocket** - polling every 10s instead
 - **No attachments / streaming media**
-- **No QR-pairing / Emergency Kit PDF** — manual passphrase + Secret Key
+- **No QR-pairing / Emergency Kit PDF** - manual passphrase + Secret Key
   re-entry is the only enrollment path
 - **No SQLCipher** on the client (encrypted notes still encrypted in cache,
   but the surrounding metadata is plaintext-on-disk under OS encryption)
@@ -263,4 +263,4 @@ This is an MVP, not a release. Notable gaps versus the master spec:
 - **No password reset / email verification**
 - **No tests for sync conflict resolution beyond stale-HLC rejection**
 
-Each of these is purely additive — nothing here paints us into a corner.
+Each of these is purely additive - nothing here paints us into a corner.

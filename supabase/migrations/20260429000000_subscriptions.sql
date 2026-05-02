@@ -1,10 +1,10 @@
--- Agent 10 — subscription, usage, and device-cap schema.
+-- Agent 10 - subscription, usage, and device-cap schema.
 --
 -- The actual money flow lives in Paddle (web/desktop) and RevenueCat (mobile).
 -- This file gives us:
---   1. meo.subscriptions  — current tier of record per user (one row, upsert).
---   2. meo.usage_log       — append-only counter for LLM tokens / storage usage.
---   3. meo.devices         — device fingerprints used for the per-tier device cap.
+--   1. meo.subscriptions  - current tier of record per user (one row, upsert).
+--   2. meo.usage_log       - append-only counter for LLM tokens / storage usage.
+--   3. meo.devices         - device fingerprints used for the per-tier device cap.
 --
 -- Webhooks (paddle-webhook, revenuecat-webhook) call SECURITY DEFINER RPCs to
 -- write into these tables under the service role; clients only ever read their
@@ -40,7 +40,7 @@ create policy "subscriptions: self read"
 -- meo.upsert_subscription() under service_role.
 
 -- ----------------------------------------------------------------------------
--- meo.usage_log — append-only meter
+-- meo.usage_log - append-only meter
 -- ----------------------------------------------------------------------------
 
 create table if not exists meo.usage_log (
@@ -64,7 +64,7 @@ create policy "usage_log: self read"
   using (user_id = auth.uid());
 
 -- ----------------------------------------------------------------------------
--- meo.devices — used by the free-tier device cap (1 device for free, 3 for hobbyist).
+-- meo.devices - used by the free-tier device cap (1 device for free, 3 for hobbyist).
 -- ----------------------------------------------------------------------------
 
 create table if not exists meo.devices (
@@ -94,7 +94,7 @@ create policy "devices: self delete"
   using (user_id = auth.uid());
 
 -- ----------------------------------------------------------------------------
--- meo.upsert_subscription — service-role-only writer used by webhooks.
+-- meo.upsert_subscription - service-role-only writer used by webhooks.
 -- ----------------------------------------------------------------------------
 
 create or replace function meo.upsert_subscription(
@@ -133,7 +133,7 @@ revoke all on function meo.upsert_subscription(uuid, text, text, text, timestamp
 grant execute on function meo.upsert_subscription(uuid, text, text, text, timestamptz, boolean, jsonb) to service_role;
 
 -- ----------------------------------------------------------------------------
--- meo.subscription_source — read helper used by webhooks to detect cross-store
+-- meo.subscription_source - read helper used by webhooks to detect cross-store
 -- conflicts before they create a duplicate purchase. Service-role only.
 -- ----------------------------------------------------------------------------
 
@@ -152,7 +152,7 @@ revoke all on function meo.subscription_source(uuid) from public;
 grant execute on function meo.subscription_source(uuid) to service_role;
 
 -- ----------------------------------------------------------------------------
--- meo.device_seen — upsert + cap enforcement.
+-- meo.device_seen - upsert + cap enforcement.
 --
 -- Counts distinct devices seen in the last 30 days. Returns 'ok' or
 -- 'cap_reached'. The client treats 'cap_reached' as a 403 from the sync layer
@@ -187,7 +187,7 @@ begin
    limit 1;
 
   if v_existed is null then
-    -- New device — count existing distinct devices in last 30 days.
+    -- New device - count existing distinct devices in last 30 days.
     select coalesce(count(distinct device_id), 0) into v_count
       from meo.devices
      where user_id = v_user

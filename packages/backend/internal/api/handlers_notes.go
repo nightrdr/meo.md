@@ -13,7 +13,7 @@ import (
 
 // syncNotes returns every note for the user with version > since.
 // Cursor in the response is the highest version seen, or `since` if
-// nothing came back — clients persist this and pass it on the next
+// nothing came back - clients persist this and pass it on the next
 // poll.
 func (s *Server) syncNotes(c *gin.Context) {
 	since, _ := strconv.ParseInt(c.DefaultQuery("since", "0"), 10, 64)
@@ -64,7 +64,7 @@ func (s *Server) upsertNote(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 	case errors.Is(err, store.ErrStaleWrite):
 		// Re-read so the client gets the current row in the same
-		// response — saves a round trip on the conflict-resolve path.
+		// response - saves a round trip on the conflict-resolve path.
 		current, getErr := s.notes.Get(req.ID)
 		if getErr != nil {
 			c.JSON(http.StatusConflict, gin.H{"error": "stale write"})

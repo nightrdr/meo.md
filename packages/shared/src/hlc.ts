@@ -1,4 +1,4 @@
-// Hybrid logical clock — tiny implementation.
+// Hybrid logical clock - tiny implementation.
 // Format: <13-digit ms timestamp>-<5-digit logical counter>
 // Comparison is lexicographic (zero-padded fields).
 

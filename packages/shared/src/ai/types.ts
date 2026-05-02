@@ -11,9 +11,9 @@ export interface Model {
   name: string;
   kind: ModelKind;
   tag: string;                  // UI subtitle, e.g. "Fast, on-device"
-  size?: string;                // human-readable, e.g. "1.1 GB" — local-gguf only
+  size?: string;                // human-readable, e.g. "1.1 GB" - local-gguf only
   vendor?: string;              // cloud-only, e.g. "OpenAI"
-  installed?: boolean;          // local-gguf only — runtime-resolved
+  installed?: boolean;          // local-gguf only - runtime-resolved
   default?: boolean;            // marks the recommended default per platform
 }
 

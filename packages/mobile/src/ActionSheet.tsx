@@ -1,5 +1,5 @@
 // Reusable bottom-sheet action menu. Mobile equivalent of the desktop
-// ContextMenu — invoked from long-press on notes, folders, tags. Also
+// ContextMenu - invoked from long-press on notes, folders, tags. Also
 // hosts simple prompts (e.g. "New folder name").
 //
 // Renders a slide-up Modal. iOS-styled by default; works on Android.

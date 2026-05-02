@@ -5,7 +5,7 @@
 //
 // Plus a pair of Web-Crypto helpers for the AES-256-GCM master-key
 // wrapping. We use the browser's SubtleCrypto here (not @noble) because
-// every desktop runtime — Tauri WKWebView, WebView2, WebKitGTK — exposes
+// every desktop runtime - Tauri WKWebView, WebView2, WebKitGTK - exposes
 // SubtleCrypto natively, and the wrap step happens once per device-key
 // rotation (not per note). Keeping a runtime-bundled WebCrypto path
 // also makes the dev-server (`npm run dev`) Just Work without depending
@@ -45,7 +45,7 @@ function tauriAvailable(): boolean {
  * Returns true if the OS keychain + biometric prompt are usable on
  * this device. macOS Tauri returns true (we always attempt; the OS
  * picks Touch ID / Watch / login-pwd as fallback). Windows checks
- * Windows Hello availability synchronously. Linux returns false —
+ * Windows Hello availability synchronously. Linux returns false -
  * we honestly tell the UI no biometric is available so the prompt
  * copy isn't misleading. Plain browser tabs (no Tauri) return false.
  */
@@ -71,7 +71,7 @@ export async function saveWrapKey(keyB64: string): Promise<void> {
 /**
  * Pull the wrap key out of the keychain. The OS will prompt the user
  * for biometric (or fallback) before resolving. Rejects on cancel,
- * not-found, or platform error — callers should fall back to the
+ * not-found, or platform error - callers should fall back to the
  * passphrase unlock screen.
  */
 export async function loadWrapKey(): Promise<string> {
@@ -88,7 +88,7 @@ export async function clearWrapKey(): Promise<void> {
   try {
     await invoke('biometric_clear', { keyId: KEY_ID });
   } catch {
-    // swallow — sign-out continues regardless
+    // swallow - sign-out continues regardless
   }
 }
 
@@ -115,7 +115,7 @@ function base64ToBytes(s: string): Uint8Array {
 
 /**
  * Generate a fresh 32-byte AES key, encrypt `masterRaw` under it, and
- * return the wrap key + ciphertext blob + nonce — all base64-encoded
+ * return the wrap key + ciphertext blob + nonce - all base64-encoded
  * so they round-trip cleanly through IndexedDB and the Rust bridge.
  *
  * The caller is responsible for:
@@ -181,7 +181,7 @@ export async function unwrapMasterRaw(
 // ─── JWT helper ──────────────────────────────────────────────────────
 //
 // Pull the `exp` claim out of a JWT without verifying the signature.
-// This is fine for "is the token still useful?" — the server still
+// This is fine for "is the token still useful?" - the server still
 // checks the signature on every request. Returns ms since epoch or
 // null if the token is malformed.
 export function jwtExpMs(jwt: string): number | null {

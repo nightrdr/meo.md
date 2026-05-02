@@ -1,7 +1,7 @@
-# Desktop — meo.md web app (MVP)
+# Desktop - meo.md web app (MVP)
 
 Vite + React + TypeScript + TipTap. Runs in the browser; intended to be
-wrapped in Tauri 2.x post-MVP (no code changes needed — point Tauri at the
+wrapped in Tauri 2.x post-MVP (no code changes needed - point Tauri at the
 built `dist/`).
 
 ## Screens
@@ -17,7 +17,7 @@ built `dist/`).
   prompt for encryption passphrase, derive unlock key, wrap master key,
   `PUT /account`.
 - Display Secret Key prominently with "Save this now" warning. (No PDF
-  generation in MVP — just on-screen display + clipboard copy.)
+  generation in MVP - just on-screen display + clipboard copy.)
 
 ### `/app` (post-unlock, three-pane)
 - **Left:** folder tree built by walking `note.folder` paths.
@@ -42,13 +42,13 @@ built `dist/`).
 
 ## Local persistence
 IndexedDB via `idb` library. Two stores:
-- `meta` — `{ jwt, user_id, sync_cursor, account_wrapper }`
-- `notes` — encrypted rows (so a re-mount doesn't need to re-fetch from
+- `meta` - `{ jwt, user_id, sync_cursor, account_wrapper }`
+- `notes` - encrypted rows (so a re-mount doesn't need to re-fetch from
   server). Decrypted into in-memory state only.
 
 ## Crypto on desktop
 - `master_key` lives in memory (`CryptoKey`, non-extractable).
-- Lost on tab refresh — user re-enters passphrase + Secret Key.
+- Lost on tab refresh - user re-enters passphrase + Secret Key.
 - For MVP we do NOT persist the master key; "remember me" is a v1.5 feature
   that requires keychain integration.
 

@@ -25,7 +25,7 @@ export function makeAttachmentsClient() {
   const { url, anonKey } = readConfig();
   if (!anonKey) return null;
   // session.api may be ApiClient (legacy Hono) or SupabaseApiClient. Only
-  // the latter has a JWT we can sign Edge Function calls with — and the
+  // the latter has a JWT we can sign Edge Function calls with - and the
   // attachments path requires Supabase anyway.
   const jwt = (session.api as any).jwt;
   if (!jwt) return null;

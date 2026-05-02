@@ -30,7 +30,7 @@ func (s *Server) getAccount(c *gin.Context) {
 	})
 }
 
-// putAccount stores the wrapper. One-shot per user — re-init has to
+// putAccount stores the wrapper. One-shot per user - re-init has to
 // go through a separate (un)wrap-and-rewrap flow.
 func (s *Server) putAccount(c *gin.Context) {
 	var req accountRequest

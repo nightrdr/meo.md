@@ -1,4 +1,4 @@
--- Agent 8 — 2FA (Business+) TOTP storage.
+-- Agent 8 - 2FA (Business+) TOTP storage.
 --
 -- TOTP requires the verifier to hold the shared secret in plaintext at
 -- validation time, so we cannot use the per-user master key. Instead the
@@ -21,12 +21,12 @@ create table if not exists meo.tfa_secrets (
 
 alter table meo.tfa_secrets enable row level security;
 
--- No SELECT / INSERT / UPDATE / DELETE policy is defined — that means
+-- No SELECT / INSERT / UPDATE / DELETE policy is defined - that means
 -- authenticated users can never reach this table directly. Only the
 -- Edge Functions, running with the service role, see the rows.
 
 -- ----------------------------------------------------------------------------
--- meo.tfa_status — the *only* read clients are allowed: yes/no flag for the
+-- meo.tfa_status - the *only* read clients are allowed: yes/no flag for the
 -- current user. Used by App.tsx on cold start to decide whether to mount
 -- the TOTP screen between OTP-verify and the unlock screen.
 -- ----------------------------------------------------------------------------

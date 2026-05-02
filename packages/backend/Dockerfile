@@ -1,10 +1,10 @@
 # ─────────────────────────────────────────────────────────────────────
-# Stage 1 — build the Go binary
+# Stage 1 - build the Go binary
 # ─────────────────────────────────────────────────────────────────────
 #
 # `modernc.org/sqlite` is pure-Go, so we get a fully static binary
 # with no CGO. That means stage 2 can be `gcr.io/distroless/static`
-# (~3 MB) — no glibc, no shell, no package manager, just the binary.
+# (~3 MB) - no glibc, no shell, no package manager, just the binary.
 #
 # Build context expectation:
 #   docker build -f packages/backend/Dockerfile packages/backend
@@ -44,7 +44,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} \
 RUN mkdir -p /out/data && chown -R 65532:65532 /out/data
 
 # ─────────────────────────────────────────────────────────────────────
-# Stage 2 — minimal runtime image
+# Stage 2 - minimal runtime image
 # ─────────────────────────────────────────────────────────────────────
 #
 # `distroless/static-debian12` ships:
@@ -52,7 +52,7 @@ RUN mkdir -p /out/data && chown -R 65532:65532 /out/data
 #   - /etc/ssl/certs/ca-certificates.crt
 #   - tzdata (so time.Local works against the TZ env var)
 #   - a non-root `nonroot` user (UID 65532)
-# Nothing else — no shell to exec into, which is the whole point.
+# Nothing else - no shell to exec into, which is the whole point.
 FROM gcr.io/distroless/static-debian12:nonroot
 
 # Image label conventions for ops folks running `docker inspect`.
@@ -61,7 +61,7 @@ LABEL org.opencontainers.image.title="meo.md backend" \
       org.opencontainers.image.source="https://meo.md" \
       org.opencontainers.image.licenses="MIT"
 
-# Default environment — override per-deployment with `docker run -e`.
+# Default environment - override per-deployment with `docker run -e`.
 #   PORT          - listen port (default 8787, matches the dev script)
 #   MEO_DB_PATH   - SQLite file. We mount /data as a volume.
 #   MEO_MODEL_DIR - hosted model files (Agent 7). Defaults inside the

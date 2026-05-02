@@ -1,4 +1,4 @@
--- Agent 8 — Vault feature.
+-- Agent 8 - Vault feature.
 --
 -- Adds an `is_vault` flag to meo.notes so the server-side sync path can hand
 -- the client a row tagged "this body is double-wrapped, render locked
@@ -19,7 +19,7 @@ create index if not exists idx_notes_user_vault
   on meo.notes (user_id, is_vault) where is_vault = true;
 
 -- ----------------------------------------------------------------------------
--- meo.upsert_note v2 — adds p_is_vault. We replace the function in-place
+-- meo.upsert_note v2 - adds p_is_vault. We replace the function in-place
 -- (same name, new arg list) so the existing 5-arg signature can be dropped
 -- once the desktop client picks up the new shape. Both signatures coexist
 -- during the rollout to avoid breaking older clients between deploy and

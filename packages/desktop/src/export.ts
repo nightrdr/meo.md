@@ -1,4 +1,4 @@
-// Agent 2 — note export pipelines.
+// Agent 2 - note export pipelines.
 //
 // Five formats, all triggered from the right-click menu and the
 // File ▸ Export native menu submenu (Agent 5).
@@ -50,7 +50,7 @@ async function renderMarkdownToHtml(md: string): Promise<string> {
   ]);
   const m = new Marked();
   m.use(markedKatex({ throwOnError: false, displayMode: false }) as any);
-  // Mermaid extension — turn ```mermaid blocks into <pre class="mermaid">…</pre>.
+  // Mermaid extension - turn ```mermaid blocks into <pre class="mermaid">…</pre>.
   m.use({
     renderer: {
       code({ text, lang }: { text: string; lang?: string | null }) {
@@ -118,13 +118,13 @@ ${body}
 // Exporters
 // ────────────────────────────────────────────────────────────────────
 
-/** Markdown — dump `note.body` verbatim. */
+/** Markdown - dump `note.body` verbatim. */
 export async function exportNoteAsMarkdown(note: Note): Promise<void> {
   const blob = new Blob([note.body || ''], { type: 'text/markdown;charset=utf-8' });
   downloadBlob(blob, safeFilename(note, 'md'));
 }
 
-/** Plain text — strip markdown formatting. */
+/** Plain text - strip markdown formatting. */
 export async function exportNoteAsTXT(note: Note): Promise<void> {
   const txt = (note.body || '')
     // Code fences
@@ -159,7 +159,7 @@ export async function exportNoteAsTXT(note: Note): Promise<void> {
   downloadBlob(blob, safeFilename(note, 'txt'));
 }
 
-/** HTML — standalone document. */
+/** HTML - standalone document. */
 export async function exportNoteAsHTML(note: Note): Promise<void> {
   const html = await buildStandaloneHtml(note);
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
@@ -167,7 +167,7 @@ export async function exportNoteAsHTML(note: Note): Promise<void> {
 }
 
 /**
- * PDF — open a popup with the standalone HTML and immediately call
+ * PDF - open a popup with the standalone HTML and immediately call
  * `print()`, leaving the user to "Save as PDF" in the system dialog.
  *
  * This is the v1 approach the spec asks for. It avoids bundling
@@ -190,19 +190,19 @@ export async function exportNoteAsPDF(note: Note): Promise<void> {
     }, 1200);
     return;
   }
-  // Popup blocked — download the HTML and prompt the user to print it.
+  // Popup blocked - download the HTML and prompt the user to print it.
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   downloadBlob(blob, safeFilename(note, 'html'));
   // eslint-disable-next-line no-alert
-  alert('Pop-up blocked — saved as HTML instead. Open it and use your browser to "Save as PDF".');
+  alert('Pop-up blocked - saved as HTML instead. Open it and use your browser to "Save as PDF".');
 }
 
 /**
- * DOCX — basic markdown → docx via the `docx` package.
+ * DOCX - basic markdown → docx via the `docx` package.
  *
  * We re-use `marked` to lex the markdown into tokens, then map each
  * token type to a docx Paragraph / Run / Heading / Table. This is
- * intentionally simple — perfect fidelity is a follow-up. Math and
+ * intentionally simple - perfect fidelity is a follow-up. Math and
  * mermaid render as monospace fenced blocks (the math source / the
  * diagram source) since neither library produces a native docx
  * primitive.

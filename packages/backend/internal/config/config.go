@@ -23,7 +23,7 @@ type Config struct {
 }
 
 // Load reads the environment with sensible defaults. JWT_SECRET, if
-// unset, is replaced with 32 random bytes — matches the TS server's
+// unset, is replaced with 32 random bytes - matches the TS server's
 // behavior of generating a per-process secret. Useful in dev; fatal in
 // prod (issued JWTs invalidate on restart).
 func Load() (*Config, error) {
@@ -58,7 +58,7 @@ func Load() (*Config, error) {
 		if _, err := rand.Read(secret); err != nil {
 			return nil, fmt.Errorf("rand: %w", err)
 		}
-		// Hex-stringify just for the log line below — not used as the
+		// Hex-stringify just for the log line below - not used as the
 		// actual secret, which stays raw.
 		_ = hex.EncodeToString
 	}

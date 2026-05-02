@@ -1,4 +1,4 @@
--- Agent 6 — tier-aware storage + per-attachment limits.
+-- Agent 6 - tier-aware storage + per-attachment limits.
 --
 -- The pricing matrix lives in mvp-development.md:
 --   Free       → 1 GB total · 10 MB per attachment
@@ -8,13 +8,13 @@
 --
 -- The client mirrors these in packages/shared/src/attachments.ts (`tierLimits`)
 -- so users see immediate feedback when they pick a too-large file. The
--- server is authoritative — we re-check inside SECURITY DEFINER RPCs and
+-- server is authoritative - we re-check inside SECURITY DEFINER RPCs and
 -- raise SQLSTATE codes the desktop client humanizes:
 --   P0007 → attachment_too_large    (single file > tier max)
 --   P0008 → storage_cap_exceeded    (total bytes > tier total)
 
 -- ----------------------------------------------------------------------------
--- meo.tier_limits — single source of truth, callable by other RPCs.
+-- meo.tier_limits - single source of truth, callable by other RPCs.
 -- ----------------------------------------------------------------------------
 
 create or replace function meo.tier_limits(p_user_id uuid)
@@ -56,7 +56,7 @@ revoke all on function meo.tier_limits(uuid) from public;
 grant execute on function meo.tier_limits(uuid) to authenticated, service_role;
 
 -- ----------------------------------------------------------------------------
--- meo.attachments_create v3 — tier-aware quota + per-attachment cap.
+-- meo.attachments_create v3 - tier-aware quota + per-attachment cap.
 -- Drops the hardcoded constants from the previous migration (10 GiB workspace,
 -- 110 MiB ciphertext) in favour of looking up the user's tier.
 -- ----------------------------------------------------------------------------
@@ -147,7 +147,7 @@ revoke all on function meo.attachments_create(uuid, uuid, text, text, bigint, by
 grant execute on function meo.attachments_create(uuid, uuid, text, text, bigint, bytea, bytea, bytea) to authenticated;
 
 -- ----------------------------------------------------------------------------
--- meo.note_size_check — called from upsert_note to gate note ciphertext
+-- meo.note_size_check - called from upsert_note to gate note ciphertext
 -- against the tier's total storage cap. Notes count toward storage along
 -- with attachments. Raises P0008 on over-cap.
 -- ----------------------------------------------------------------------------
@@ -189,7 +189,7 @@ revoke all on function meo.note_size_check(uuid, integer) from public;
 grant execute on function meo.note_size_check(uuid, integer) to authenticated, service_role;
 
 -- ----------------------------------------------------------------------------
--- meo.upsert_note v3 — calls meo.note_size_check on every write so users
+-- meo.upsert_note v3 - calls meo.note_size_check on every write so users
 -- can't smuggle past the cap by uploading a giant ciphertext as a note.
 -- ----------------------------------------------------------------------------
 
@@ -270,7 +270,7 @@ revoke all on function meo.upsert_note(uuid, bytea, bytea, text, integer, boolea
 grant execute on function meo.upsert_note(uuid, bytea, bytea, text, integer, boolean) to authenticated;
 
 -- ----------------------------------------------------------------------------
--- meo.storage_usage — read-only "X of Y bytes used" RPC for the Settings UI.
+-- meo.storage_usage - read-only "X of Y bytes used" RPC for the Settings UI.
 -- Returns a single row with attachment_bytes, note_bytes, total_bytes, cap_bytes.
 -- ----------------------------------------------------------------------------
 
@@ -323,7 +323,7 @@ revoke all on function meo.storage_usage() from public;
 grant execute on function meo.storage_usage() to authenticated;
 
 -- ----------------------------------------------------------------------------
--- meo.attachments_quota_used — keep the existing surface (clients still call
+-- meo.attachments_quota_used - keep the existing surface (clients still call
 -- it after Agent 10 shipped). Now consults tier_limits() so it reports the
 -- right cap for non-Free tiers.
 -- ----------------------------------------------------------------------------

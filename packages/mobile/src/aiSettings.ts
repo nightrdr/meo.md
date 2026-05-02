@@ -1,5 +1,5 @@
 // Persistent AI prefs that survive app restarts. Currently a single
-// boolean — whether to use the real bge-small embedder vs the no-op
+// boolean - whether to use the real bge-small embedder vs the no-op
 // embedder (default off; BM25 carries retrieval until the user opts in
 // and downloads the 33 MB ONNX model + 250 KB vocab).
 //

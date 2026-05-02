@@ -1,7 +1,7 @@
 // Settings → Security pane (Agent 8).
 //
 // Hosts the 2FA enrollment surface for Business/Enterprise users. Free and
-// Hobbyist see an upgrade pitch instead — the spec restricts 2FA to Business+
+// Hobbyist see an upgrade pitch instead - the spec restricts 2FA to Business+
 // (see mvp-development.md "Pricing tiers").
 //
 // Layout:
@@ -9,7 +9,7 @@
 //   - Status row: "Two-factor: ON" / "Two-factor: OFF" + Configure / Disable.
 //   - Inline <TFAEnroll> when the user clicks Configure.
 //
-// The "Disable" button doesn't fully delete the row — it flips `enabled` so
+// The "Disable" button doesn't fully delete the row - it flips `enabled` so
 // the cold-start gate stops firing. Re-enabling re-enrolls (new secret), so
 // the user is forced to scan a fresh QR code.
 
@@ -65,7 +65,7 @@ export function Security({ session }: Props) {
               <div className="settings-row-label">Two-factor authentication</div>
               <div className="settings-row-value">
                 {enabled == null && <span className="muted">checking…</span>}
-                {enabled === true && <>ON <span className="muted small">— required at every cold start</span></>}
+                {enabled === true && <>ON <span className="muted small">- required at every cold start</span></>}
                 {enabled === false && <>OFF</>}
               </div>
             </div>

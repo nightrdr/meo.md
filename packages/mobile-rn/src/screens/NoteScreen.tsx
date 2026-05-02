@@ -1,4 +1,4 @@
-// Read-only note viewer. Markdown source is the rendering for v1 —
+// Read-only note viewer. Markdown source is the rendering for v1 -
 // no TipTap, no remark/rehype pipeline. This keeps the bundle size
 // small and avoids native-module complications on macOS.
 //
@@ -37,7 +37,7 @@ export function NoteScreen({ note, onBack }: Props) {
           value={note.body ?? ''}
           editable={false}
           multiline
-          // selectable + scroll inside ScrollView only — no native
+          // selectable + scroll inside ScrollView only - no native
           // edit. v1 is read-only.
         />
       </ScrollView>

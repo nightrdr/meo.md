@@ -1,16 +1,16 @@
 // Mobile embedder. Two implementations behind the same `Embedder` interface:
 //
-//   1. NoopEmbedder — returns zero-vectors. The default; lets hybrid
+//   1. NoopEmbedder - returns zero-vectors. The default; lets hybrid
 //      retrieval gracefully degrade to BM25-only without throwing.
 //
-//   2. OnnxBgeSmallEmbedder — bge-small-en-v1.5 via onnxruntime-react-native.
+//   2. OnnxBgeSmallEmbedder - bge-small-en-v1.5 via onnxruntime-react-native.
 //      Loads the WordPiece tokenizer + ONNX model on first call. Mean-pools
 //      the last_hidden_state weighted by attention_mask, then L2-normalizes.
 //      Output is a 384-dim Float32Array, ready to drop into the same vector
 //      store + cosine path the desktop embedder uses.
 //
 // The ONNX model + vocab download on first use because they're 33 MB and
-// 250 KB respectively — bundling both inflates the IPA past App Store size
+// 250 KB respectively - bundling both inflates the IPA past App Store size
 // warnings. Resumable via `expo-file-system`'s `createDownloadResumable`.
 
 import * as FileSystem from 'expo-file-system';
@@ -27,7 +27,7 @@ export const ONNX_URL = 'https://huggingface.co/Xenova/bge-small-en-v1.5/resolve
 export const VOCAB_URL = 'https://huggingface.co/Xenova/bge-small-en-v1.5/resolve/main/vocab.txt';
 
 // ----------------------------------------------------------------------------
-// NoopEmbedder — default
+// NoopEmbedder - default
 // ----------------------------------------------------------------------------
 
 export class NoopEmbedder implements Embedder {
@@ -42,7 +42,7 @@ export class NoopEmbedder implements Embedder {
 }
 
 // ----------------------------------------------------------------------------
-// File management — downloads with progress
+// File management - downloads with progress
 // ----------------------------------------------------------------------------
 
 export interface FileStatus {
@@ -130,7 +130,7 @@ export class OnnxBgeSmallEmbedder implements Embedder {
     const vocabText = await FileSystem.readAsStringAsync(vocabPath);
     this.tokenizer = BertTokenizer.fromVocabText(vocabText);
 
-    // Lazy require — onnxruntime-react-native pulls in a substantial native
+    // Lazy require - onnxruntime-react-native pulls in a substantial native
     // pod; only load when the user actually opts into real embeddings.
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const ort = require('onnxruntime-react-native');

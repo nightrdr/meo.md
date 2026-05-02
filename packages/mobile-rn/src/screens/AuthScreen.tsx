@@ -60,7 +60,7 @@ export function AuthScreen({ onAuthenticated }: Props) {
   const [pendingMaster, setPendingMaster] = useState<Uint8Array | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Stable api ref — Supabase keeps session state on the instance,
+  // Stable api ref - Supabase keeps session state on the instance,
   // so we want one client across the entire auth flow.
   const apiRef = useRef(makeApiClient());
   const api = apiRef.current;
@@ -126,7 +126,7 @@ export function AuthScreen({ onAuthenticated }: Props) {
       hlc: hlcZero(),
     };
     setSession(session);
-    // Best-effort post-auth wiring — none of these should block the
+    // Best-effort post-auth wiring - none of these should block the
     // user from getting to the notes list.
     try {
       await loadNotes(session);

@@ -8,7 +8,7 @@ import {
 } from '@meo/shared';
 import { getMeta, setMeta, listCachedNotes, putCachedNote } from './storage';
 // listCachedNotes is also used directly inside the vault re-lock helpers
-// below — keep this import the single source of truth so bundler chunking
+// below - keep this import the single source of truth so bundler chunking
 // matches the pre-existing (Auth/Onboarding/aiStore) static-import pattern.
 
 declare const __API_URL__: string;
@@ -30,11 +30,11 @@ export interface Session {
   // Cached subscription row, lazily loaded after auth (refreshSubscription).
   // `null` means "not loaded yet"; a missing row → tier 'free'.
   subscription?: SubscriptionRow | null;
-  // Agent 8 — Vault feature.
+  // Agent 8 - Vault feature.
   // `vaultKey` is derived once on session adoption (lazy: only when the
   // first vault unlock is requested) via HKDF over masterRaw + user_id.
   // `unlockedVaultIds` tracks which vault notes are currently open in
-  // plaintext form. Closing/switching notes clears entries — see
+  // plaintext form. Closing/switching notes clears entries - see
   // `relockVaultNote()` and `relockAllVaultNotes()` below.
   vaultKey?: CryptoKey;
   unlockedVaultIds?: Set<string>;
@@ -54,7 +54,7 @@ export function getCurrentTier(session: Session | null | undefined): Tier {
 
 /**
  * Fetch meo.subscriptions for this user and cache it on the Session.
- * Idempotent — calling repeatedly just refreshes the cache.
+ * Idempotent - calling repeatedly just refreshes the cache.
  */
 export async function refreshSubscription(session: Session): Promise<SubscriptionRow | null> {
   if (!(session.api instanceof SupabaseApiClient)) {
@@ -91,7 +91,7 @@ export async function rehydrateNotes(session: Session): Promise<void> {
   for (const row of cached) {
     if (row.deleted_at) continue;
     try {
-      // Pass `undefined` for vaultKey on rehydrate — we don't unlock vault
+      // Pass `undefined` for vaultKey on rehydrate - we don't unlock vault
       // notes from cache. Their bodies stay in `vault:<n>:<ct>` wire form
       // until the user explicitly unlocks via the modal.
       const note = await decryptNote(
@@ -163,7 +163,7 @@ export async function relockVaultNote(session: Session, noteId: string): Promise
   session.unlockedVaultIds.delete(noteId);
 }
 
-/** "Lock all vault notes" — invoked from the App menu item. */
+/** "Lock all vault notes" - invoked from the App menu item. */
 export async function relockAllVaultNotes(session: Session): Promise<void> {
   const ids = Array.from(session.unlockedVaultIds ?? []);
   for (const id of ids) await relockVaultNote(session, id);
@@ -330,7 +330,7 @@ export { hlcCompare };
 
 // ─── Tier gating constants (Agent 7) ───────────────────────────────
 //
-// Gating policy (canonical — see mvp-development.md "Pricing tiers"):
+// Gating policy (canonical - see mvp-development.md "Pricing tiers"):
 //   - free:       no cloud LLMs, no BYO API keys; upgrade nag in UI.
 //   - hobbyist:   BYO API keys (OpenAI / Anthropic / Google) only,
 //                 stored locally, never proxied through our server.
@@ -351,7 +351,7 @@ export const BUSINESS_OVERAGE_RATE = { tokens: 100_000, usd_cents: 500 };
 /**
  * Toggle a note's vault flag and persist. When turning a note INTO a vault
  * note we need the vault key on hand (it'll wrap the body on the next save).
- * When turning OFF, we leave the body as plaintext — but only if the note is
+ * When turning OFF, we leave the body as plaintext - but only if the note is
  * currently unlocked. Locking a vault, then trying to un-vault it without
  * unlocking, is rejected (the caller should run unlockVaultNote first).
  */
@@ -366,7 +366,7 @@ export async function setVault(session: Session, noteId: string, isVault: boolea
   if (isVault && !session.unlockedVaultIds?.has(noteId)) {
     if (!session.unlockedVaultIds) session.unlockedVaultIds = new Set();
     // The note is currently plaintext (we just flipped the flag), so mark it
-    // as "unlocked for this open" — saveNote will wrap it on the next tick.
+    // as "unlocked for this open" - saveNote will wrap it on the next tick.
     session.unlockedVaultIds.add(noteId);
   }
   return saveNote(session, next);

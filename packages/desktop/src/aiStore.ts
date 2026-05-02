@@ -36,7 +36,7 @@ let cached: AIRuntime | null = null;
 
 /**
  * Get (and lazily build) the AI runtime. Note: the embedder loads
- * lazily inside this function — first call triggers the model
+ * lazily inside this function - first call triggers the model
  * download, which can be slow.
  */
 export async function getAIRuntime(): Promise<AIRuntime> {

@@ -13,7 +13,7 @@ import (
 )
 
 // listModelManifest returns the static catalogue with download_url
-// rewritten to be absolute against the request's host. Public — no
+// rewritten to be absolute against the request's host. Public - no
 // auth needed (manifest is the same for everyone, and clients hit
 // this on first run before they have a token).
 func (s *Server) listModelManifest(c *gin.Context) {
@@ -38,7 +38,7 @@ func (s *Server) listModelManifest(c *gin.Context) {
 }
 
 // streamModelFile serves the binary with Range support so clients can
-// resume large downloads. Public — model files are public artifacts.
+// resume large downloads. Public - model files are public artifacts.
 //
 // We rely on Gin's c.File which delegates to http.ServeContent and
 // gets us If-Modified-Since + Range for free.

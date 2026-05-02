@@ -76,33 +76,34 @@ export function Onboarding({ onDone }: Props) {
   const anyDownloading = Object.values(rows).some(s => s.status === 'downloading');
 
   return (
-    <div className="auth-shell" data-testid="onboarding">
-      <div className="auth-card">
+    <div className="auth-wrap" data-testid="onboarding">
+      <div>
         <div className="auth-brand">
           <MeoMark size={28} />
           <span className="name">Meo</span>
         </div>
-        <h2>Set up AI</h2>
-        <p className="muted">
+        <div className="auth-card">
+        <h1>Set up AI</h1>
+        <p className="sub">
           Meo runs AI features on your device. Download a model now, or skip and grab one later from Settings.
         </p>
 
         {manifestErr && (
-          <div className="settings-callout warn">
-            <Icon.Warning size={13} stroke="var(--ai)" />
-            <div>
-              <b>Couldn't reach the model server.</b><br />
-              <span className="muted small">{manifestErr}</span>
-            </div>
+          /* Soft info - not a "warn". Reaching the model server is an
+             optional step (most local-dev installs won't have the Go
+             backend running). The user can skip and add models from
+             Settings later. */
+          <div className="info" style={{ marginTop: 12 }}>
+            The AI model server isn't reachable right now. You can skip this for now and download models later from Settings.
           </div>
         )}
 
         {!manifest && !manifestErr && (
-          <p className="muted small">Loading available models…</p>
+          <p className="muted small" style={{ marginTop: 12 }}>Loading available models…</p>
         )}
 
         {manifest && desktopEntries.length === 0 && (
-          <p className="muted small">No models are available right now. You can skip this step.</p>
+          <p className="muted small" style={{ marginTop: 12 }}>No models are available right now. You can skip this step.</p>
         )}
 
         <div className="model-list" style={{ marginTop: 12 }}>
@@ -154,9 +155,10 @@ export function Onboarding({ onDone }: Props) {
           })}
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+        <div className="actions" style={{ marginTop: 20 }}>
           <button className="btn" onClick={skip} disabled={anyDownloading}>Skip for now</button>
-          <button className="btn primary" onClick={finish} disabled={anyDownloading}>Done</button>
+          <button className="btn primary" onClick={finish} disabled={anyDownloading} style={{ flex: 1 }}>Done</button>
+        </div>
         </div>
       </div>
     </div>

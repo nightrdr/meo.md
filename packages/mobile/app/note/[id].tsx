@@ -1,5 +1,5 @@
 // Note editor on mobile. Plain markdown TextInput body (rich editor is
-// deferred — TenTap was out of MVP scope per spec §5.2 and 04-mobile.md).
+// deferred - TenTap was out of MVP scope per spec §5.2 and 04-mobile.md).
 // Bottom toolbar matches the design source.
 
 import { useEffect, useState, useCallback, useRef } from 'react';
