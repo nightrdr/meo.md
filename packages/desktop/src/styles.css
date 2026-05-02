@@ -2245,3 +2245,88 @@ button, input, textarea, select { font: inherit; color: inherit; }
   font-size: 11px; color: var(--ink3);
   margin-top: 2px;
 }
+
+/* ─── Vault unlock modal + TFA (Agent 8) ─── */
+
+.vault-modal {
+  width: 380px;
+  background: var(--overlay);
+  border: 1px solid var(--paper-edge);
+  border-radius: 14px;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.3);
+  padding: 28px 28px 22px;
+  display: flex; flex-direction: column; align-items: stretch;
+  gap: 10px;
+  font-family: var(--font-sans);
+}
+.vault-icon { color: var(--ink2); align-self: center; }
+.vault-title { margin: 4px 0 0; font-size: 17px; font-weight: 600; text-align: center; }
+.vault-sub { margin: 0 0 8px; text-align: center; font-size: 13px; }
+.vault-form { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+.vault-form input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--paper-edge);
+  border-radius: 8px;
+  background: var(--paper-deep);
+  color: var(--ink);
+}
+.vault-form input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.vault-error {
+  font-size: 12px; color: var(--danger);
+  background: rgba(196,85,63,0.08);
+  border: 1px solid rgba(196,85,63,0.3);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.btn.link {
+  background: transparent; border: none; color: var(--ink3);
+  text-decoration: underline; cursor: pointer;
+  align-self: center; padding: 4px;
+}
+.btn.link:hover { color: var(--ink2); }
+
+/* Lock icon adjacent to a title in the list pane. */
+.title-row .vault-pad { margin-right: 4px; vertical-align: middle; color: var(--ink3); }
+
+/* TFA enrollment surface. */
+.tfa-qr-wrap {
+  display: flex; justify-content: center;
+  background: white;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--paper-edge);
+  margin: 12px 0;
+}
+.tfa-qr { display: block; }
+.tfa-secret {
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 4px; margin-bottom: 12px;
+}
+.tfa-secret code {
+  font-family: var(--font-mono); font-size: 12px;
+  background: var(--paper-deep); padding: 6px 8px; border-radius: 6px;
+  user-select: all;
+  word-break: break-all;
+}
+.tfa-verify-form {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+}
+.tfa-verify-form input {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  letter-spacing: 4px;
+  text-align: center;
+  padding: 8px 10px;
+  border: 1px solid var(--paper-edge);
+  border-radius: 8px;
+  background: var(--paper-deep);
+  width: 140px;
+}
+.tfa-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--ink3);
+  padding: 2px 6px;
+  background: var(--paper-deep);
+  border-radius: 6px;
+}

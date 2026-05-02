@@ -13,7 +13,7 @@
 // successful upgrade.
 
 import React, { useEffect, useState, useCallback } from 'react';
-import type { SubscriptionRow, Tier } from '@meo/shared';
+import { SupabaseApiClient, type SubscriptionRow, type Tier } from '@meo/shared';
 import { Icon } from '../Icon';
 import { type Session, refreshSubscription, getCurrentTier } from '../session';
 
@@ -39,6 +39,22 @@ export function Subscription({ session }: Props) {
   const [row, setRow] = useState<SubscriptionRow | null | undefined>(session.subscription);
   const [loading, setLoading] = useState<boolean>(row === undefined);
   const [error, setError] = useState<string | null>(null);
+  const [tfaEnabled, setTfaEnabled] = useState<boolean | null>(null);
+
+  // Probe 2FA status (Agent 8) for the side-badge on Business/Enterprise.
+  useEffect(() => {
+    let alive = true;
+    const tier = getCurrentTier(session);
+    if ((tier === 'business' || tier === 'enterprise')
+        && session.api instanceof SupabaseApiClient) {
+      session.api.tfaStatus()
+        .then(v => { if (alive) setTfaEnabled(v); })
+        .catch(() => { if (alive) setTfaEnabled(false); });
+    } else {
+      setTfaEnabled(null);
+    }
+    return () => { alive = false; };
+  }, [session]);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -106,6 +122,12 @@ export function Subscription({ session }: Props) {
                   {TIER_LABELS[tier]}
                   {row?.cancel_at_period_end && (
                     <span className="muted"> · cancels at period end</span>
+                  )}
+                  {tfaEnabled != null && (
+                    <span className="tfa-badge" style={{ marginLeft: 8 }}>
+                      <Icon.Lock size={11} />
+                      <span>Two-factor: {tfaEnabled ? 'ON' : 'OFF'}</span>
+                    </span>
                   )}
                 </div>
                 <div className="muted small" style={{ marginTop: 6 }}>

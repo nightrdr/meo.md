@@ -111,4 +111,15 @@ export class ApiClient {
   deleteNote(id: string) {
     return this.req<EncryptedNoteRow>(`/notes/${id}`, { method: 'DELETE' });
   }
+
+  // ─── 2FA (Agent 8) ───────────────────────────────────────────────
+  // The Hono backend doesn't carry 2FA state yet — these throw so callers
+  // get a clear "not supported on this backend" error instead of a 404.
+  async tfaStatus(): Promise<boolean> { return false; }
+  async tfaEnroll(): Promise<{ otpauth_url: string; secret_b32: string }> {
+    throw new ApiError(501, { error: 'tfa not supported on hono backend' });
+  }
+  async tfaVerify(_code: string): Promise<{ token: string; expires_at: number }> {
+    throw new ApiError(501, { error: 'tfa not supported on hono backend' });
+  }
 }

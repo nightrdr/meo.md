@@ -20,11 +20,12 @@ import { Icon } from './Icon';
 import { peekAIRuntime, getAIRuntime } from './aiStore';
 import { Subscription } from './Settings/Subscription';
 import { Devices } from './Settings/Devices';
+import { Security } from './Settings/Security';
 import type { Session } from './session';
 import { getCurrentTier } from './session';
 import { getMeta, setMeta } from './storage';
 
-export type SettingsTab = 'ai' | 'subscription' | 'devices';
+export type SettingsTab = 'ai' | 'subscription' | 'devices' | 'security';
 
 interface PullState {
   modelId: string;
@@ -140,7 +141,11 @@ export function Settings({ session, notes, modelId, initialTab = 'ai', onSelectM
     s => !discoveredIds.has(normalize(s.id)),
   );
 
-  const tabLabel = tab === 'subscription' ? 'Subscription' : tab === 'devices' ? 'Devices' : 'AI';
+  const tabLabel =
+    tab === 'subscription' ? 'Subscription'
+    : tab === 'devices' ? 'Devices'
+    : tab === 'security' ? 'Security'
+    : 'AI';
 
   return (
     <div className="settings-overlay" onMouseDown={onClose}>
@@ -177,6 +182,13 @@ export function Settings({ session, notes, modelId, initialTab = 'ai', onSelectM
           >
             Devices
           </button>
+          <button
+            className={`settings-tab ${tab === 'security' ? 'active' : ''}`}
+            onClick={() => setTab('security')}
+            type="button"
+          >
+            Security
+          </button>
         </nav>
 
         {tab === 'subscription' && (
@@ -188,6 +200,12 @@ export function Settings({ session, notes, modelId, initialTab = 'ai', onSelectM
         {tab === 'devices' && (
           <div className="settings-body">
             <Devices session={session} />
+          </div>
+        )}
+
+        {tab === 'security' && (
+          <div className="settings-body">
+            <Security session={session} />
           </div>
         )}
 
