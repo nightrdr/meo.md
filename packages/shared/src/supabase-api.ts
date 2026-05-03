@@ -42,11 +42,28 @@ export interface SupabaseConfig {
   anonKey: string;   // public anon key
 }
 
+/**
+ * Refresh callback. Invoked when an authenticated RPC fails with a 401
+ * (or PostgREST's PGRST301 "JWT expired"). Implementation is expected
+ * to obtain a fresh access token (typically by calling
+ * refreshAccessToken with the persisted refresh_token) and ALSO to
+ * persist the new token + rotated refresh_token wherever the app
+ * keeps long-lived state. Returns the new access token, or null/undef
+ * if no refresh is possible (e.g. no refresh_token stored), in which
+ * case the original 401 is re-raised to the caller.
+ */
+export type TokenRefresher = () => Promise<string | undefined | null>;
+
 export class SupabaseApiClient {
   public baseUrl: string;
   public jwt?: string;
   private sb: SupabaseClient;
   private userId?: string;
+  // Set via setTokenRefresher; the desktop wires this up after each
+  // login / cold-start refresh so mid-session JWT expiry is handled
+  // transparently. Without it, every API call after the 1-hour TTL
+  // dies with 401 and the user has to re-authenticate.
+  private tokenRefresher?: TokenRefresher;
 
   constructor(config: SupabaseConfig, jwt?: string) {
     this.baseUrl = config.url;
@@ -68,6 +85,60 @@ export class SupabaseApiClient {
       (this.sb as any).rest.headers['authorization'] = `Bearer ${jwt}`;
     } else {
       delete (this.sb as any).rest.headers['authorization'];
+    }
+  }
+
+  /**
+   * Register the refresh callback. Pass `undefined` to clear it
+   * (e.g. on sign-out). Idempotent.
+   */
+  setTokenRefresher(refresher: TokenRefresher | undefined) {
+    this.tokenRefresher = refresher;
+  }
+
+  /**
+   * Wrap any authenticated RPC/PostgREST call so that a 401 / "JWT
+   * expired" failure triggers exactly one refresh-and-retry attempt.
+   * The retry uses the refreshed JWT (installed via setJwt by the
+   * tokenRefresher itself). On retry-still-fails or no refresher
+   * registered, the original error propagates.
+   *
+   * Typed loose-ly because supabase-js's builder return types vary
+   * (Postgrest builder, RPC builder, auth, etc.). The shape we care
+   * about is `{ error?: unknown; data?: unknown }`.
+   */
+  private async withAuthRetry<T>(
+    call: () => PromiseLike<T>,
+  ): Promise<T> {
+    let result = await call();
+    if (this.shouldRetryAfterRefresh((result as any)?.error)) {
+      const newJwt = await this.tryRefresh();
+      if (newJwt) {
+        result = await call();
+      }
+    }
+    return result;
+  }
+
+  private shouldRetryAfterRefresh(error: unknown): boolean {
+    if (!error || !this.tokenRefresher) return false;
+    const e = error as { code?: string; status?: number; message?: string };
+    // PostgREST: PGRST301 = JWT expired; HTTP 401 = generally auth
+    // GoTrue:    status 401
+    if (e.code === 'PGRST301') return true;
+    if (e.status === 401) return true;
+    if (typeof e.message === 'string' && /jwt expired|invalid jwt|jwt verification/i.test(e.message)) {
+      return true;
+    }
+    return false;
+  }
+
+  private async tryRefresh(): Promise<string | null | undefined> {
+    if (!this.tokenRefresher) return null;
+    try {
+      return await this.tokenRefresher();
+    } catch {
+      return null;
     }
   }
 
@@ -166,11 +237,12 @@ export class SupabaseApiClient {
       if (error || !data.user) throw new ApiError(401, { error: 'not authenticated' });
       this.userId = data.user.id;
     }
-    const { data, error } = await this.sb
+    const userId = this.userId;
+    const { data, error } = await this.withAuthRetry(() => this.sb
       .from('accounts')
       .select('salt, encrypted_master_key, master_key_nonce, kdf_params')
-      .eq('user_id', this.userId)
-      .single();
+      .eq('user_id', userId)
+      .single());
     if (error) {
       if (error.code === 'PGRST116') throw new ApiError(404, { error: 'no account' });
       throw new ApiError(500, { error: error.message });
@@ -204,11 +276,11 @@ export class SupabaseApiClient {
   }
 
   async syncNotes(since: number): Promise<SyncResponse> {
-    const { data, error } = await this.sb
+    const { data, error } = await this.withAuthRetry(() => this.sb
       .from('notes')
       .select('id, encrypted_content, nonce, version, hlc_timestamp, updated_at, deleted_at, size_bytes, is_vault')
       .gt('version', since)
-      .order('version', { ascending: true });
+      .order('version', { ascending: true }));
     if (error) throw new ApiError(500, { error: error.message });
     const rows: EncryptedNoteRow[] = (data ?? []).map(r => ({
       id: r.id,
@@ -226,14 +298,14 @@ export class SupabaseApiClient {
   }
 
   async upsertNote(row: EncryptedNoteRow): Promise<EncryptedNoteRow> {
-    const { data, error } = await this.sb.rpc('upsert_note', {
+    const { data, error } = await this.withAuthRetry(() => this.sb.rpc('upsert_note', {
       p_id: row.id,
       p_encrypted_content: base64ToHex(row.encrypted_content),
       p_nonce: base64ToHex(row.nonce),
       p_hlc_timestamp: row.hlc_timestamp,
       p_size_bytes: row.size_bytes,
       p_is_vault: Boolean(row.is_vault ?? false),
-    });
+    }));
     if (error) {
       throw mapPgError(error);
     }
@@ -241,7 +313,7 @@ export class SupabaseApiClient {
   }
 
   async deleteNote(id: string): Promise<EncryptedNoteRow> {
-    const { data, error } = await this.sb.rpc('delete_note', { p_id: id });
+    const { data, error } = await this.withAuthRetry(() => this.sb.rpc('delete_note', { p_id: id }));
     if (error) {
       throw mapPgError(error);
     }

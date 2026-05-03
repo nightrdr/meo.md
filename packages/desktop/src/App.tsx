@@ -378,6 +378,34 @@ export default function App() {
     setModelId(meta.model_id ?? FALLBACK_DEFAULT_MODEL_ID);
     setSidebarHidden(meta.sidebar_hidden ?? false);
     setOnboardingPending(meta.onboarding_done !== true);
+
+    // Register a token refresher so any 401 from a mid-session JWT
+    // expiry triggers a silent refresh-and-retry inside the API
+    // client. Without this, the app worked for an hour after sign-in
+    // and then every save/sync started 401-ing until restart.
+    if (s.api instanceof SupabaseApiClient) {
+      s.api.setTokenRefresher(async () => {
+        const cur = await getMeta();
+        if (!cur.refresh_token) return null;
+        try {
+          const refreshed = await ensureRefresher().refreshAccessToken(cur.refresh_token);
+          // Persist BOTH tokens (refresh tokens are rotated by Supabase
+          // on each successful exchange) and install on the live api.
+          await setMeta({
+            jwt: refreshed.jwt,
+            refresh_token: refreshed.refresh_token ?? cur.refresh_token,
+            user_id: refreshed.user_id,
+          });
+          (s.api as SupabaseApiClient).setJwt(refreshed.jwt);
+          console.info('[auth] token refreshed mid-session');
+          return refreshed.jwt;
+        } catch (e) {
+          console.warn('[auth] mid-session refresh failed:', e);
+          return null;
+        }
+      });
+    }
+
     setSession(s);
     // Populate the attachments-renderer shim so Editor.tsx + AttachmentRenderer
     // can build an authed AttachmentsClient on demand without prop-drilling
@@ -453,6 +481,52 @@ export default function App() {
     }, 10_000);
     return () => clearInterval(id);
   }, [session, refresh]);
+
+  // Periodic JWT refresh. Supabase access tokens default to a 1-hour
+  // TTL; we refresh proactively at ~50 min to avoid the user ever
+  // hitting a 401 in the middle of a save. The 401-retry path in
+  // SupabaseApiClient is the safety net; this loop is the primary
+  // mechanism. Tab-visibility-aware so backgrounded windows don't
+  // spam the auth server.
+  useEffect(() => {
+    if (!session) return;
+    if (!(session.api instanceof SupabaseApiClient)) return;
+
+    const REFRESH_INTERVAL_MS = 50 * 60 * 1000; // 50 minutes
+    const refreshNow = async () => {
+      const cur = await getMeta();
+      if (!cur.refresh_token) return;
+      try {
+        const refreshed = await ensureRefresher().refreshAccessToken(cur.refresh_token);
+        await setMeta({
+          jwt: refreshed.jwt,
+          refresh_token: refreshed.refresh_token ?? cur.refresh_token,
+          user_id: refreshed.user_id,
+        });
+        (session.api as SupabaseApiClient).setJwt(refreshed.jwt);
+        console.info('[auth] periodic refresh ok');
+      } catch (e) {
+        console.warn('[auth] periodic refresh failed (will retry on next tick):', e);
+      }
+    };
+
+    // Pacing: skip the tick when the document is hidden (e.g. window
+    // minimized for hours) - we'll catch up on visibilitychange or
+    // via the 401-retry safety net.
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshNow();
+    }, REFRESH_INTERVAL_MS);
+    const onVis = () => {
+      // When the user comes back to the tab after a long pause,
+      // proactively refresh so the next interaction doesn't trip 401.
+      if (document.visibilityState === 'visible') void refreshNow();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [session]);
 
   const allNotes = useMemo(
     () => session ? Array.from(session.notes.values()) : [],
