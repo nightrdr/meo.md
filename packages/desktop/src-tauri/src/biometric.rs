@@ -35,13 +35,22 @@ fn service_for(key_id: &str) -> String {
 // surface to the JS side as the Promise rejection's message.
 
 #[tauri::command]
-pub async fn biometric_save(key_id: String, key_b64: String) -> Result<(), String> {
+pub async fn biometric_save(key_id: String, key_b64: String) -> Result<String, String> {
+    // Returns the keychain tier that actually accepted the write
+    // ("data-protection-acl", "legacy-acl", or "legacy-noacl"). The
+    // JS side persists this hint in IDB so the next cold-start `load`
+    // can skip directly to the right keychain instead of probing all
+    // three (which produces multiple OS prompts on unsigned dev binaries).
     platform::save(&key_id, &key_b64)
 }
 
 #[tauri::command]
-pub async fn biometric_load(key_id: String) -> Result<String, String> {
-    platform::load(&key_id)
+pub async fn biometric_load(key_id: String, hint: Option<String>) -> Result<String, String> {
+    // `hint` comes from the previous save. When present we query only
+    // the indicated keychain; on a miss we fall back through the
+    // remaining tiers. When absent we try data-protection then legacy
+    // (production / first-ever-load behaviour).
+    platform::load(&key_id, hint.as_deref())
 }
 
 #[tauri::command]
@@ -147,7 +156,13 @@ mod platform {
         }
     }
 
-    pub fn save(key_id: &str, key_b64: &str) -> Result<(), String> {
+    /// Tier label exposed to JS so cold-start `load` can target the
+    /// right keychain on the first try and avoid extra OS prompts.
+    pub const TIER_DP_ACL: &str = "data-protection-acl";
+    pub const TIER_LEGACY_ACL: &str = "legacy-acl";
+    pub const TIER_LEGACY_NOACL: &str = "legacy-noacl";
+
+    pub fn save(key_id: &str, key_b64: &str) -> Result<String, String> {
         // We try THREE keychain configurations in order:
         //
         //   1. Data protection keychain with full userPresence ACL.
@@ -173,25 +188,37 @@ mod platform {
         // ACL itself (errSecMissingEntitlement, errSecNotAvailable);
         // param/duplicate errors mean the caller's input is wrong and
         // we don't paper over them.
+        //
+        // Returns the tier name that succeeded so JS can persist a
+        // hint and `load` can skip the unnecessary probes next time.
         let entitlement_failure = |e: &str| {
             e.contains("errSecMissingEntitlement")
                 || e.contains("errSecNotAvailable")
                 || e.contains("-34018")
                 || e.contains("-25291")
         };
-        save_inner(key_id, key_b64, true, true).or_else(|err1| {
-            if !entitlement_failure(&err1) {
-                return Err(err1);
-            }
-            save_inner(key_id, key_b64, false, true).or_else(|err2| {
-                if !entitlement_failure(&err2) {
-                    return Err(format!("dataProtection: {err1}; legacy: {err2}"));
+        match save_inner(key_id, key_b64, true, true) {
+            Ok(()) => return Ok(TIER_DP_ACL.to_string()),
+            Err(err1) => {
+                if !entitlement_failure(&err1) {
+                    return Err(err1);
                 }
-                save_inner(key_id, key_b64, false, false).map_err(|err3| {
-                    format!("dataProtection: {err1}; legacy: {err2}; legacy-noacl: {err3}")
-                })
-            })
-        })
+                match save_inner(key_id, key_b64, false, true) {
+                    Ok(()) => return Ok(TIER_LEGACY_ACL.to_string()),
+                    Err(err2) => {
+                        if !entitlement_failure(&err2) {
+                            return Err(format!("dataProtection: {err1}; legacy: {err2}"));
+                        }
+                        match save_inner(key_id, key_b64, false, false) {
+                            Ok(()) => Ok(TIER_LEGACY_NOACL.to_string()),
+                            Err(err3) => Err(format!(
+                                "dataProtection: {err1}; legacy: {err2}; legacy-noacl: {err3}"
+                            )),
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fn save_inner(
@@ -292,15 +319,40 @@ mod platform {
         Ok(())
     }
 
-    pub fn load(key_id: &str) -> Result<String, String> {
-        // Try the modern keychain first, fall back to legacy. Mirrors
-        // save() so a key written via the legacy fallback can be read
-        // back on the next cold start.
-        load_inner(key_id, true).or_else(|err1| {
-            load_inner(key_id, false).map_err(|err2| {
-                format!("dataProtection: {err1}; legacy: {err2}")
-            })
-        })
+    pub fn load(key_id: &str, hint: Option<&str>) -> Result<String, String> {
+        // Use the hint from the previous successful save to skip
+        // straight to the right keychain. On a hint miss (the keychain
+        // was cleared, OS upgraded, etc.) we fall back through the
+        // remaining tiers. With no hint (first-ever load, or older IDB
+        // state with no recorded hint) we try data-protection first
+        // then legacy - same order save uses.
+        //
+        // Why this matters: every probe of either keychain on an
+        // ad-hoc-signed binary triggers a "[app] wants to use the
+        // keychain" prompt. Without a hint we'd ask twice on every
+        // cold start - once for the modern keychain that's empty,
+        // once for the legacy keychain that has the entry.
+        match hint {
+            Some(TIER_DP_ACL) => {
+                load_inner(key_id, true).or_else(|err1| {
+                    load_inner(key_id, false).map_err(|err2| {
+                        format!("hint=dp-acl miss; dp: {err1}; legacy: {err2}")
+                    })
+                })
+            }
+            Some(TIER_LEGACY_ACL) | Some(TIER_LEGACY_NOACL) => {
+                load_inner(key_id, false).or_else(|err1| {
+                    load_inner(key_id, true).map_err(|err2| {
+                        format!("hint=legacy miss; legacy: {err1}; dp: {err2}")
+                    })
+                })
+            }
+            _ => load_inner(key_id, true).or_else(|err1| {
+                load_inner(key_id, false).map_err(|err2| {
+                    format!("dataProtection: {err1}; legacy: {err2}")
+                })
+            }),
+        }
     }
 
     fn load_inner(key_id: &str, data_protection: bool) -> Result<String, String> {

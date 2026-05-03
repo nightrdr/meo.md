@@ -63,9 +63,15 @@ export async function biometricAvailable(): Promise<boolean> {
  * behind the userPresence ACL. Called once after the first
  * successful passphrase+SecretKey unlock when the user has opted
  * into biometric.
+ *
+ * Returns the keychain tier the OS actually accepted the write on
+ * ("data-protection-acl", "legacy-acl", or "legacy-noacl"). Callers
+ * should persist this so cold-start `loadWrapKey` can target the
+ * right keychain on the first try and avoid an extra OS prompt
+ * probing the empty one.
  */
-export async function saveWrapKey(keyB64: string): Promise<void> {
-  await invoke('biometric_save', { keyId: KEY_ID, keyB64 });
+export async function saveWrapKey(keyB64: string): Promise<string> {
+  return invoke<string>('biometric_save', { keyId: KEY_ID, keyB64 });
 }
 
 /**
@@ -73,9 +79,14 @@ export async function saveWrapKey(keyB64: string): Promise<void> {
  * for biometric (or fallback) before resolving. Rejects on cancel,
  * not-found, or platform error - callers should fall back to the
  * passphrase unlock screen.
+ *
+ * `hint` should be the tier string returned by the previous
+ * saveWrapKey, persisted in IDB. Without it we have to probe both
+ * keychains on every cold start, which doubles OS prompts on
+ * unsigned dev binaries.
  */
-export async function loadWrapKey(): Promise<string> {
-  return invoke<string>('biometric_load', { keyId: KEY_ID });
+export async function loadWrapKey(hint?: string | null): Promise<string> {
+  return invoke<string>('biometric_load', { keyId: KEY_ID, hint: hint ?? null });
 }
 
 /**

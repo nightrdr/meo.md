@@ -252,6 +252,7 @@ export default function App() {
           master_wrap_blob: undefined,
           master_wrap_nonce: undefined,
           biometric_enabled: false,
+          wrap_key_tier: undefined,
         });
         await clearWrapKey();
         console.info('[auth] -> email mode (no resume path available)');

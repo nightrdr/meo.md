@@ -205,6 +205,7 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
         master_wrap_blob: undefined,
         master_wrap_nonce: undefined,
         biometric_enabled: false,
+        wrap_key_tier: undefined,
       });
       await clearWrapKey();
       return;
@@ -232,8 +233,8 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
       // at READ time, not write. A failure here typically means
       // SecItemAdd returned a non-zero OSStatus (sandbox denial,
       // duplicate entry that couldn't be cleared, etc).
-      await saveWrapKey(keyB64);
-      console.info('[auth] biometric: keychain save returned ok');
+      const tier = await saveWrapKey(keyB64);
+      console.info('[auth] biometric: keychain save returned ok (tier=' + tier + ')');
 
       // We DELIBERATELY skip a verify-load here. On macOS, calling
       // SecItemCopyMatching on a kSecAccessControlUserPresence-protected
@@ -259,6 +260,7 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
         master_wrap_blob: blob,
         master_wrap_nonce: nonce,
         biometric_enabled: true,
+        wrap_key_tier: tier,
       });
       console.info('[auth] biometric: enrolled, wrap blob persisted to IDB');
     } catch (e) {
@@ -270,6 +272,7 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
         master_wrap_blob: undefined,
         master_wrap_nonce: undefined,
         biometric_enabled: false,
+        wrap_key_tier: undefined,
       });
       await clearWrapKey().catch(() => {});
       // Surface to the UI so the user knows quick-unlock didn't take.
@@ -378,8 +381,10 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
       if (!meta.user_id || !meta.master_wrap_blob || !meta.master_wrap_nonce) {
         throw new Error('Quick-unlock data missing - please use your passphrase.');
       }
-      // Touch ID prompt: read the wrap key out of the keychain.
-      const keyB64 = await loadWrapKey();
+      // Touch ID prompt: read the wrap key out of the keychain. Pass
+      // the tier hint persisted at enrollment time so the OS only
+      // probes the right keychain (avoids a redundant prompt).
+      const keyB64 = await loadWrapKey(meta.wrap_key_tier);
       const masterRaw = await unwrapMasterRaw(keyB64, meta.master_wrap_blob, meta.master_wrap_nonce);
 
       // Make sure we have a usable access JWT. The cold-start router
@@ -494,6 +499,7 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
         master_wrap_blob: undefined,
         master_wrap_nonce: undefined,
         biometric_enabled: false,
+        wrap_key_tier: undefined,
       });
       setMode('email');
       setEmail('');
