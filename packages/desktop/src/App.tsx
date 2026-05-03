@@ -173,8 +173,12 @@ export default function App() {
 
         // Access JWT is dead but a refresh token survives - try a
         // silent refresh against Supabase. If it succeeds we keep
-        // biometric / wrap state; if it fails (refresh token revoked,
-        // user signed out elsewhere, etc.) we fall through to OTP.
+        // biometric / wrap state; if it fails we fall through but do
+        // NOT permanently destroy the refresh_token - it might be a
+        // transient network blip. handleBiometricUnlock will retry the
+        // refresh after the user passes Touch ID, so worst case the
+        // user authenticates locally and the refresh runs again with
+        // fresh network conditions.
         if (!hasValidJwt && meta.refresh_token) {
           try {
             const api = new SupabaseApiClient({ url: supabaseUrl, anonKey: supabaseAnonKey });
@@ -187,22 +191,28 @@ export default function App() {
             hasValidJwt = true;
             console.info('[auth] silent refresh succeeded');
           } catch (e) {
-            // refresh token is dead - clear it so we don't keep retrying
-            console.warn('[auth] silent refresh failed:', e);
-            await setMeta({ refresh_token: undefined });
+            console.warn('[auth] silent refresh failed (will retry after biometric):', e);
+            // Intentionally NOT wiping refresh_token - the biometric
+            // path will retry it after Touch ID succeeds. Only an
+            // explicit sign-out clears refresh_token.
           }
         }
 
-        if (hasValidJwt && hasWrap && meta.biometric_enabled !== false) {
-          console.info('[auth] -> biometric mode');
+        // Enter biometric mode whenever the user has a wrap blob and
+        // biometric is enabled - we no longer require a valid JWT
+        // here, because handleBiometricUnlock can do its own refresh
+        // after Touch ID. Previously we wiped the wrap blob whenever
+        // the JWT was dead AND silent refresh failed, which meant a
+        // single transient refresh failure permanently disabled
+        // biometric. Now wrap state survives JWT expiry.
+        if (hasWrap && meta.biometric_enabled !== false) {
+          console.info('[auth] -> biometric mode (jwtValid=' + hasValidJwt + ')');
           if (!cancelled) setAuthStart({ mode: 'biometric', email: meta.email });
           return;
         }
-        // JWT expired (and refresh failed or absent) but wrap data
-        // left behind - clean up so the next biometric prompt isn't
-        // a no-op against stale meta.
-        if (!hasValidJwt && hasWrap) {
-          console.info('[auth] JWT dead + no refresh; clearing stale wrap blob');
+        // No wrap blob to begin with: we can't do biometric. Tidy up
+        // any stale keychain entry from a previous run.
+        if (!hasWrap) {
           await setMeta({
             master_wrap_blob: undefined,
             master_wrap_nonce: undefined,

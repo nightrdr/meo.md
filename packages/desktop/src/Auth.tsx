@@ -33,7 +33,7 @@ import { makeApiClient, supabaseUrl, type Session } from './session';
 import { MeoMark, Icon } from './Icon';
 import {
   biometricAvailable, loadWrapKey, unwrapMasterRaw, clearWrapKey,
-  wrapMasterRaw, saveWrapKey,
+  wrapMasterRaw, saveWrapKey, jwtExpMs,
 } from './biometric';
 import { isMac, isWindows } from './platform';
 
@@ -206,24 +206,58 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
     }
     try {
       const { keyB64, blob, nonce } = await wrapMasterRaw(masterRaw);
+      console.info('[auth] biometric: wrapped masterRaw; saving to keychain...');
+      // saveWrapKey doesn't prompt for Touch ID on macOS - SecItemAdd
+      // with kSecAccessControlUserPresence only enforces user-presence
+      // at READ time, not write. A failure here typically means
+      // SecItemAdd returned a non-zero OSStatus (sandbox denial,
+      // duplicate entry that couldn't be cleared, etc).
+      await saveWrapKey(keyB64);
+      console.info('[auth] biometric: keychain save returned ok');
+
+      // Verify the keychain entry by reading it back. This DOES prompt
+      // for Touch ID on macOS - which is exactly what we want during
+      // enrollment: the user gets immediate visual confirmation that
+      // biometric was set up, AND we prove the entry round-trips end
+      // to end before persisting the wrap blob to IDB. If verification
+      // fails (user cancelled the prompt, hardware genuinely missing,
+      // OS returned garbage), we tear down the keychain entry and
+      // keep biometric_enabled = false. This eliminates the failure
+      // mode where we cheerfully set master_wrap_blob in IDB but the
+      // keychain entry doesn't actually work, leaving the user
+      // permanently routed to a biometric screen that errors out.
+      try {
+        const verifyB64 = await loadWrapKey();
+        if (verifyB64 !== keyB64) {
+          throw new Error('keychain returned a different key than we wrote');
+        }
+        console.info('[auth] biometric: verify-load round-tripped successfully');
+      } catch (verifyErr) {
+        console.warn('[auth] biometric: verify-load failed; tearing down:', verifyErr);
+        await clearWrapKey();
+        throw verifyErr;
+      }
+
+      // Only NOW persist the wrap blob - we know the keychain entry
+      // is functional. If we'd written this BEFORE the verify-load,
+      // a failed verify would leave us with a wrap_blob that points
+      // to a key the OS won't return on the next cold start.
       await setMeta({
         master_wrap_blob: blob,
         master_wrap_nonce: nonce,
         biometric_enabled: true,
       });
-      // saveWrapKey triggers the OS biometric-setup prompt on macOS
-      // ("Allow Meo to use Touch ID"). A failure here typically means
-      // the user denied permission - flip the flag back off so the
-      // next cold start doesn't show the biometric screen.
-      await saveWrapKey(keyB64);
-      console.info('[auth] biometric: enrolled, wrap key saved to keychain');
+      console.info('[auth] biometric: enrolled, wrap blob persisted to IDB');
     } catch (e) {
       console.warn('[auth] biometric setup failed (continuing without):', e);
+      // Leave room to recover: if the user opts in next time the
+      // enrollment can succeed without confusing residual state.
       await setMeta({
         master_wrap_blob: undefined,
         master_wrap_nonce: undefined,
         biometric_enabled: false,
       });
+      await clearWrapKey().catch(() => {});
     }
   }
 
@@ -287,12 +321,45 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
     setError(null); setBusy(true);
     try {
       const meta = await getMeta();
-      if (!meta.jwt || !meta.user_id || !meta.master_wrap_blob || !meta.master_wrap_nonce) {
+      if (!meta.user_id || !meta.master_wrap_blob || !meta.master_wrap_nonce) {
         throw new Error('Quick-unlock data missing - please use your passphrase.');
       }
+      // Touch ID prompt: read the wrap key out of the keychain.
       const keyB64 = await loadWrapKey();
       const masterRaw = await unwrapMasterRaw(keyB64, meta.master_wrap_blob, meta.master_wrap_nonce);
-      api.setJwt(meta.jwt);
+
+      // Make sure we have a usable access JWT. The cold-start router
+      // no longer requires this before entering biometric mode (so
+      // wrap state survives JWT expiry). If the cached JWT is dead,
+      // do a silent refresh now using the stored refresh_token.
+      let workingJwt = meta.jwt;
+      const exp = workingJwt ? jwtExpMs(workingJwt) : null;
+      const jwtValid = !!workingJwt && !!exp && Date.now() < exp;
+      if (!jwtValid) {
+        if (!meta.refresh_token) {
+          throw new Error('Session expired and no refresh token stored - please use your passphrase.');
+        }
+        if (!(api instanceof SupabaseApiClient)) {
+          // Legacy Hono backend doesn't speak refresh tokens. The
+          // wrap blob is still useful but the user has to re-auth
+          // through the legacy login flow.
+          throw new Error('Session expired - please use your passphrase.');
+        }
+        try {
+          const r = await api.refreshAccessToken(meta.refresh_token);
+          workingJwt = r.jwt;
+          await setMeta({
+            jwt: r.jwt,
+            refresh_token: r.refresh_token ?? meta.refresh_token,
+            user_id: r.user_id,
+          });
+          console.info('[auth] biometric: refreshed access token after Touch ID');
+        } catch (refreshErr) {
+          console.warn('[auth] biometric: refresh after Touch ID failed:', refreshErr);
+          throw new Error('Sign-in expired - please use your passphrase.');
+        }
+      }
+      api.setJwt(workingJwt);
       const session: Session = {
         api,
         masterRaw,
