@@ -312,8 +312,34 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
     e.preventDefault();
     setError(null); setBusy(true);
     try {
-      if (!pendingJwt || !pendingUserId) throw new Error('Session expired. Sign in again.');
-      api.setJwt(pendingJwt);
+      if (!pendingUserId) throw new Error('Session expired. Sign in again.');
+
+      // Make sure we have a usable access JWT. When we got here from
+      // cold-start (skip-OTP unlock path), pendingJwt may be expired.
+      // Silent-refresh it from the stored refresh_token so the
+      // subsequent api.getAccount() doesn't hit a 401.
+      let workingJwt = pendingJwt;
+      const exp = workingJwt ? jwtExpMs(workingJwt) : null;
+      const jwtValid = !!workingJwt && !!exp && Date.now() < exp;
+      if (!jwtValid) {
+        const meta = await getMeta();
+        if (!meta.refresh_token) {
+          throw new Error('Session expired and no refresh token stored - sign in via email.');
+        }
+        if (!(api instanceof SupabaseApiClient)) {
+          throw new Error('Session expired - sign in via email.');
+        }
+        const r = await api.refreshAccessToken(meta.refresh_token);
+        workingJwt = r.jwt;
+        await setMeta({
+          jwt: r.jwt,
+          refresh_token: r.refresh_token ?? meta.refresh_token,
+          user_id: r.user_id,
+        });
+        console.info('[auth] unlock: refreshed access token before getAccount');
+      }
+      api.setJwt(workingJwt ?? undefined);
+
       const wrapper = await api.getAccount();
       const sk = parseSecretKey(secretKeyInput);
       const masterRaw = await unlockAccount(passphrase, sk, wrapper);
@@ -436,6 +462,27 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
+
+  // Hydrate pendingJwt / pendingUserId / email when the unlock screen
+  // is the FIRST screen we render (cold-start router decided "wrap blob
+  // exists but biometric is off, go straight to passphrase"). Without
+  // this, handleUnlock would throw "Session expired. Sign in again."
+  // because pendingJwt is null - it's normally set by handleVerifyOtp,
+  // which the cold-start path skips.
+  useEffect(() => {
+    if (startMode === 'unlock') {
+      let cancelled = false;
+      (async () => {
+        const meta = await getMeta();
+        if (cancelled) return;
+        if (meta.jwt) setPendingJwt(meta.jwt);
+        if (meta.user_id) setPendingUserId(meta.user_id);
+        if (meta.email) setEmail(meta.email);
+      })();
+      return () => { cancelled = true; };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleBiometricSignOut() {
     if (!confirm('Sign out and clear local cache on this device?')) return;

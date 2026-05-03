@@ -67,7 +67,7 @@ export default function App() {
   // - we render nothing until the IDB read completes so the user
   // doesn't see the email screen flash before the biometric prompt.
   const [authStart, setAuthStart] = useState<{
-    mode: 'email' | 'biometric';
+    mode: 'email' | 'biometric' | 'unlock';
     email?: string;
   } | null>(null);
   // First-run onboarding: shown to a brand-new user after Auth.tsx
@@ -217,28 +217,43 @@ export default function App() {
           }
         }
 
-        // Enter biometric mode whenever the user has a wrap blob and
-        // biometric is enabled - we no longer require a valid JWT
-        // here, because handleBiometricUnlock can do its own refresh
-        // after Touch ID. Previously we wiped the wrap blob whenever
-        // the JWT was dead AND silent refresh failed, which meant a
-        // single transient refresh failure permanently disabled
-        // biometric. Now wrap state survives JWT expiry.
-        if (hasWrap && meta.biometric_enabled !== false) {
+        // Routing tree once we have meta + maybe-refreshed JWT:
+        //
+        //   hasWrap && biometric_enabled === true   → biometric screen
+        //   hasWrap && biometric_enabled !== true   → unlock (passphrase) screen
+        //   !hasWrap                                → email/OTP screen
+        //
+        // The middle branch is the new "biometric was disabled or
+        // never opted into, but we still know who the user is": skip
+        // the email-OTP detour and ask for passphrase + Secret Key
+        // directly. handleUnlock can then run maybeEnrollBiometric
+        // again to (re)enable biometric for next time.
+        //
+        // We no longer require a valid JWT to enter biometric or
+        // unlock - both screens can do their own silent refresh
+        // (handleBiometricUnlock after Touch ID; handleUnlock right
+        // before api.getAccount). This means a single transient
+        // refresh failure no longer permanently disables resume.
+        if (hasWrap && meta.biometric_enabled === true) {
           console.info('[auth] -> biometric mode (jwtValid=' + hasValidJwt + ')');
           if (!cancelled) setAuthStart({ mode: 'biometric', email: meta.email });
           return;
         }
-        // No wrap blob to begin with: we can't do biometric. Tidy up
-        // any stale keychain entry from a previous run.
-        if (!hasWrap) {
-          await setMeta({
-            master_wrap_blob: undefined,
-            master_wrap_nonce: undefined,
-            biometric_enabled: false,
-          });
-          await clearWrapKey();
+        if (hasWrap) {
+          // wrap blob exists but biometric is off / undefined - go to
+          // passphrase, NOT back to email/OTP.
+          console.info('[auth] -> unlock mode (passphrase, biometric disabled)');
+          if (!cancelled) setAuthStart({ mode: 'unlock', email: meta.email });
+          return;
         }
+        // No wrap blob to begin with: we can't resume. Tidy up any
+        // stale keychain entry from a previous run.
+        await setMeta({
+          master_wrap_blob: undefined,
+          master_wrap_nonce: undefined,
+          biometric_enabled: false,
+        });
+        await clearWrapKey();
         console.info('[auth] -> email mode (no resume path available)');
         if (!cancelled) setAuthStart({ mode: 'email' });
       } catch (e) {
