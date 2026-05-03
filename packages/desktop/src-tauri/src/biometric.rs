@@ -148,51 +148,76 @@ mod platform {
     }
 
     pub fn save(key_id: &str, key_b64: &str) -> Result<(), String> {
-        // We try TWO keychains in order:
-        //   1. Data protection keychain with full userPresence ACL.
-        //      This is the modern path and what release builds want.
-        //   2. Legacy file-based keychain (no kSecUseDataProtectionKeychain),
-        //      same userPresence ACL.
+        // We try THREE keychain configurations in order:
         //
-        // Why fall back? The data protection keychain refuses to
-        // accept items with an SecAccessControl object from binaries
-        // that lack the keychain-access-groups entitlement and are
-        // not properly code-signed. `tauri dev` produces an
-        // ad-hoc-signed binary with no entitlements, so SecItemAdd
-        // returns errSecMissingEntitlement (-34018). The legacy
-        // keychain is more permissive in dev mode while still
-        // enforcing the userPresence ACL on read.
-        save_inner(key_id, key_b64, true)
-            .or_else(|err1| {
-                // Only fall back on errors that suggest the modern
-                // keychain refused us; param/duplicate errors mean
-                // the caller's input is wrong and we shouldn't paper
-                // over them.
-                if err1.contains("errSecMissingEntitlement")
-                    || err1.contains("errSecNotAvailable")
-                    || err1.contains("-34018")
-                    || err1.contains("-25291")
-                {
-                    save_inner(key_id, key_b64, false).map_err(|err2| {
-                        format!("dataProtection: {err1}; legacy: {err2}")
-                    })
-                } else {
-                    Err(err1)
+        //   1. Data protection keychain with full userPresence ACL.
+        //      Modern path. Requires the keychain-access-groups
+        //      entitlement; release builds get this through Tauri's
+        //      bundled signing.
+        //
+        //   2. Legacy file-based keychain with userPresence ACL.
+        //      Same biometric protection, slightly older API. Still
+        //      requires the entitlement on macOS 11+.
+        //
+        //   3. Legacy file-based keychain WITHOUT SecAccessControl.
+        //      Last-resort dev fallback for ad-hoc-signed binaries
+        //      (`tauri dev`). The wrap key is still locked behind
+        //      the user's login keychain (i.e. their macOS login
+        //      password) but no Touch ID prompt fires. Acceptable
+        //      for development, where the biometric speed-bump is
+        //      a UX nicety rather than a security boundary; release
+        //      builds with proper signing fall through to tier 1 or
+        //      2 and get full Touch ID gating.
+        //
+        // We only fall back on errors that suggest the OS refused the
+        // ACL itself (errSecMissingEntitlement, errSecNotAvailable);
+        // param/duplicate errors mean the caller's input is wrong and
+        // we don't paper over them.
+        let entitlement_failure = |e: &str| {
+            e.contains("errSecMissingEntitlement")
+                || e.contains("errSecNotAvailable")
+                || e.contains("-34018")
+                || e.contains("-25291")
+        };
+        save_inner(key_id, key_b64, true, true).or_else(|err1| {
+            if !entitlement_failure(&err1) {
+                return Err(err1);
+            }
+            save_inner(key_id, key_b64, false, true).or_else(|err2| {
+                if !entitlement_failure(&err2) {
+                    return Err(format!("dataProtection: {err1}; legacy: {err2}"));
                 }
+                save_inner(key_id, key_b64, false, false).map_err(|err3| {
+                    format!("dataProtection: {err1}; legacy: {err2}; legacy-noacl: {err3}")
+                })
             })
+        })
     }
 
-    fn save_inner(key_id: &str, key_b64: &str, data_protection: bool) -> Result<(), String> {
+    fn save_inner(
+        key_id: &str,
+        key_b64: &str,
+        data_protection: bool,
+        with_access_control: bool,
+    ) -> Result<(), String> {
         let service = service_for(key_id);
 
         // Build a SecAccessControl requiring user presence. The
         // userPresence flag combines Touch ID, Watch unlock and a
         // login-password fallback - the OS picks the best available.
-        let access = SecAccessControl::create_with_protection(
-            Some(ProtectionMode::AccessibleWhenUnlockedThisDeviceOnly),
-            kSecAccessControlUserPresence,
-        )
-        .map_err(|e| format!("create access control: {e}"))?;
+        // Only constructed when the caller asked for it; the dev
+        // fallback (tier 3) skips this entirely.
+        let access = if with_access_control {
+            Some(
+                SecAccessControl::create_with_protection(
+                    Some(ProtectionMode::AccessibleWhenUnlockedThisDeviceOnly),
+                    kSecAccessControlUserPresence,
+                )
+                .map_err(|e| format!("create access control: {e}"))?,
+            )
+        } else {
+            None
+        };
 
         // Best-effort: clear any stale entry first. SecItemAdd would
         // fail with `errSecDuplicateItem` otherwise. We don't
@@ -224,11 +249,13 @@ mod platform {
                 kSecValueData.to_void(),
                 data.as_CFTypeRef() as *const c_void,
             );
-            add_pair(
-                &mut dict,
-                kSecAttrAccessControl.to_void(),
-                access.as_CFTypeRef() as *const c_void,
-            );
+            if let Some(ref ac) = access {
+                add_pair(
+                    &mut dict,
+                    kSecAttrAccessControl.to_void(),
+                    ac.as_CFTypeRef() as *const c_void,
+                );
+            }
             if data_protection {
                 add_pair(
                     &mut dict,
@@ -250,9 +277,15 @@ mod platform {
             )
         };
         if status != 0 {
+            let label = match (data_protection, with_access_control) {
+                (true, true)  => "dataProtection+ACL",
+                (true, false) => "dataProtection-noACL",
+                (false, true) => "legacy+ACL",
+                (false, false) => "legacy-noACL",
+            };
             return Err(format!(
                 "SecItemAdd ({}) failed: {} ({status})",
-                if data_protection { "dataProtection" } else { "legacy" },
+                label,
                 osstatus_name(status),
             ));
         }
