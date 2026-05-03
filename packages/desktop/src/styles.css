@@ -231,6 +231,22 @@ button, input, textarea, select { font: inherit; color: inherit; }
   line-height: 1.4;
 }
 
+/* Inline auth-screen notice (e.g. "biometric setup didn't take..."). */
+.auth-notice {
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--paper-edge);
+  background: var(--paper);
+  color: var(--ink2);
+}
+.auth-notice.warn {
+  background: rgba(180, 138, 46, 0.08);
+  border-color: rgba(180, 138, 46, 0.35);
+  color: var(--ink1);
+}
+
 .btn {
   font-family: var(--font-sans);
   font-size: 13px; font-weight: 500;

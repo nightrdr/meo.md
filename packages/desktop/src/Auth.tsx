@@ -95,6 +95,26 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
   useEffect(() => {
     biometricAvailable().then(setBiometricShown).catch(() => setBiometricShown(false));
   }, []);
+  // Set when maybeEnrollBiometric throws. Surfaced as a non-blocking
+  // banner so the user knows quick-unlock didn't take but their session
+  // is still valid. Stays in scope across the showSecret -> app
+  // transition (see App.tsx).
+  const [biometricEnrollNotice, setBiometricEnrollNotice] = useState<string | null>(null);
+  // Holds onAuthenticated until the user acknowledges the notice (if
+  // any). When enrollment succeeds, the post-auth callback runs
+  // immediately. When it fails, we render the notice + Continue button
+  // and only fire the callback after the user clicks Continue.
+  const [pendingPostAuth, setPendingPostAuth] = useState<(() => void) | null>(null);
+
+  // Fire the pending callback automatically when there's no notice to
+  // show (enrollment succeeded / wasn't attempted). When there IS a
+  // notice, the Continue button below the banner triggers it.
+  useEffect(() => {
+    if (pendingPostAuth && !biometricEnrollNotice) {
+      pendingPostAuth();
+      setPendingPostAuth(null);
+    }
+  }, [pendingPostAuth, biometricEnrollNotice]);
 
   // Stable api instance across renders - supabase-js holds session state.
   const apiRef = useRef<ReturnType<typeof makeApiClient> | null>(null);
@@ -215,33 +235,26 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
       await saveWrapKey(keyB64);
       console.info('[auth] biometric: keychain save returned ok');
 
-      // Verify the keychain entry by reading it back. This DOES prompt
-      // for Touch ID on macOS - which is exactly what we want during
-      // enrollment: the user gets immediate visual confirmation that
-      // biometric was set up, AND we prove the entry round-trips end
-      // to end before persisting the wrap blob to IDB. If verification
-      // fails (user cancelled the prompt, hardware genuinely missing,
-      // OS returned garbage), we tear down the keychain entry and
-      // keep biometric_enabled = false. This eliminates the failure
-      // mode where we cheerfully set master_wrap_blob in IDB but the
-      // keychain entry doesn't actually work, leaving the user
-      // permanently routed to a biometric screen that errors out.
-      try {
-        const verifyB64 = await loadWrapKey();
-        if (verifyB64 !== keyB64) {
-          throw new Error('keychain returned a different key than we wrote');
-        }
-        console.info('[auth] biometric: verify-load round-tripped successfully');
-      } catch (verifyErr) {
-        console.warn('[auth] biometric: verify-load failed; tearing down:', verifyErr);
-        await clearWrapKey();
-        throw verifyErr;
-      }
+      // We DELIBERATELY skip a verify-load here. On macOS, calling
+      // SecItemCopyMatching on a kSecAccessControlUserPresence-protected
+      // item triggers a Touch ID prompt - and macOS suppresses
+      // back-to-back prompts within a short window without requiring
+      // user input the second time, which means the Touch ID prompt
+      // either doesn't appear or appears AFTER the auth screen has
+      // already transitioned away. Net effect: the user never sees
+      // the prompt, and any failure is swallowed.
+      //
+      // Instead, we trust SecItemAdd's return code (any non-zero is
+      // surfaced via the saveWrapKey reject) and let the FIRST real
+      // Touch ID prompt fire on the next cold start when biometric
+      // mode is entered. The user sees a clear, intentional prompt
+      // there. If saveWrapKey actually failed underneath, the whole
+      // try/catch tears down and the inline notice tells the user
+      // why their next restart will go to email instead of biometric.
 
-      // Only NOW persist the wrap blob - we know the keychain entry
-      // is functional. If we'd written this BEFORE the verify-load,
-      // a failed verify would leave us with a wrap_blob that points
-      // to a key the OS won't return on the next cold start.
+      // Only persist the wrap blob to IDB after saveWrapKey returned
+      // ok. If we'd written this first, a failed save would leave us
+      // with a wrap blob pointing at a non-existent key.
       await setMeta({
         master_wrap_blob: blob,
         master_wrap_nonce: nonce,
@@ -249,6 +262,7 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
       });
       console.info('[auth] biometric: enrolled, wrap blob persisted to IDB');
     } catch (e) {
+      const msg = (e as Error).message ?? String(e);
       console.warn('[auth] biometric setup failed (continuing without):', e);
       // Leave room to recover: if the user opts in next time the
       // enrollment can succeed without confusing residual state.
@@ -258,6 +272,10 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
         biometric_enabled: false,
       });
       await clearWrapKey().catch(() => {});
+      // Surface to the UI so the user knows quick-unlock didn't take.
+      // Non-fatal - the user is still authenticated. The notice sits
+      // on the screen until they navigate away.
+      setBiometricEnrollNotice(`Biometric setup didn't take: ${msg}. You can keep signing in with your passphrase.`);
     }
   }
 
@@ -305,9 +323,19 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
         hlc: { ms: Date.now(), counter: 0 },
       };
       await maybeEnrollBiometric(masterRaw);
-      onAuthenticated(session);
-    } catch {
-      handleErr(new Error('Couldn\'t unlock - check your passphrase and Secret Key.'));
+      // If enrollment failed, the notice is set; we hold here so the
+      // user can read it (small inline banner under the form). The
+      // Continue button below the banner finalizes auth. If enrollment
+      // succeeded we proceed straight to the app.
+      setPendingPostAuth(() => () => onAuthenticated(session));
+    } catch (e) {
+      // Keep the original error for diagnostics rather than the
+      // generic "Couldn't unlock" we used to show. If the failure is
+      // elsewhere (passphrase mismatch, network, etc.) the message is
+      // more useful than a misleading hint.
+      const msg = (e as Error).message ?? '';
+      if (msg) handleErr(new Error(msg));
+      else handleErr(new Error("Couldn't unlock - check your passphrase and Secret Key."));
     }
     setBusy(false);
   }
@@ -501,7 +529,10 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
     } finally {
       setBusy(false);
     }
-    onAuthenticated(session);
+    // Same gate as handleUnlock: if enrollment set a notice, the
+    // useEffect doesn't fire onAuthenticated until the user clicks
+    // Continue.
+    setPendingPostAuth(() => () => onAuthenticated(session));
   }
 
   // ────────────────────────────────────────────────────────────────────
@@ -716,10 +747,25 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
                 <span>Enable {biometricButtonLabel().replace(/^Unlock with /, '')} on this device</span>
               </label>
             )}
+            {biometricEnrollNotice && (
+              <div className="auth-notice warn" style={{ marginTop: 14 }}>
+                {biometricEnrollNotice}
+              </div>
+            )}
             <div className="actions" style={{ marginTop: 24 }}>
-              <button className="btn primary" onClick={continuePastSecret} disabled={busy} style={{ flex: 1 }}>
-                {busy ? 'Setting up…' : "I've saved it, continue"}
-              </button>
+              {pendingPostAuth ? (
+                <button
+                  className="btn primary"
+                  onClick={() => { setBiometricEnrollNotice(null); }}
+                  style={{ flex: 1 }}
+                >
+                  Continue
+                </button>
+              ) : (
+                <button className="btn primary" onClick={continuePastSecret} disabled={busy} style={{ flex: 1 }}>
+                  {busy ? 'Setting up…' : "I've saved it, continue"}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -760,11 +806,27 @@ export function AuthScreen({ onAuthenticated, startMode, initialEmail }: Props) 
                   <span>Enable {biometricButtonLabel().replace(/^Unlock with /, '')} for next time</span>
                 </label>
               )}
+              {biometricEnrollNotice && (
+                <div className="auth-notice warn" style={{ marginTop: 12 }}>
+                  {biometricEnrollNotice}
+                </div>
+              )}
               <Notices />
               <div className="actions">
-                <button className="btn primary" disabled={busy} type="submit" style={{ flex: 1 }}>
-                  {busy ? 'Unlocking…' : 'Unlock'}
-                </button>
+                {pendingPostAuth ? (
+                  <button
+                    type="button"
+                    className="btn primary"
+                    onClick={() => { setBiometricEnrollNotice(null); }}
+                    style={{ flex: 1 }}
+                  >
+                    Continue
+                  </button>
+                ) : (
+                  <button className="btn primary" disabled={busy} type="submit" style={{ flex: 1 }}>
+                    {busy ? 'Unlocking…' : 'Unlock'}
+                  </button>
+                )}
               </div>
             </form>
           </div>

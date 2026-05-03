@@ -34,6 +34,19 @@ import {
 
 type Status = 'idle' | 'syncing' | 'saving' | 'error';
 
+// Module-level singleton for the cold-start refresh client. Reusing it
+// across cold starts (and avoiding `new SupabaseApiClient()` on every
+// auth bootstrap) silences the "Multiple GoTrueClient instances
+// detected" warning supabase-js prints when two clients share a
+// storage key.
+let _coldStartRefresher: SupabaseApiClient | null = null;
+function ensureRefresher(): SupabaseApiClient {
+  if (!_coldStartRefresher) {
+    _coldStartRefresher = new SupabaseApiClient({ url: supabaseUrl, anonKey: supabaseAnonKey });
+  }
+  return _coldStartRefresher;
+}
+
 // Display-only version for the About modal. The native bundle
 // version comes from `tauri.conf.json`; this constant just gives
 // the modal something to show without an extra import.
@@ -181,8 +194,14 @@ export default function App() {
         // fresh network conditions.
         if (!hasValidJwt && meta.refresh_token) {
           try {
-            const api = new SupabaseApiClient({ url: supabaseUrl, anonKey: supabaseAnonKey });
-            const r = await api.refreshAccessToken(meta.refresh_token);
+            // Use the shared api singleton instead of minting a new
+            // SupabaseApiClient just for refresh - each new client
+            // creates a fresh GoTrueClient against the same storage
+            // key, which trips the supabase-js "Multiple GoTrueClient
+            // instances detected" warning. Sharing also means the
+            // refreshed JWT lands directly on the client we'll use
+            // for everything else, no second setJwt needed.
+            const r = await ensureRefresher().refreshAccessToken(meta.refresh_token);
             await setMeta({
               jwt: r.jwt,
               refresh_token: r.refresh_token ?? meta.refresh_token,

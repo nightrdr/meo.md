@@ -106,7 +106,7 @@ mod platform {
         dict.add(&key, &value);
     }
 
-    fn build_query_dict(service: &str) -> CFMutableDictionary {
+    fn build_query_dict(service: &str, data_protection: bool) -> CFMutableDictionary {
         let mut dict = CFMutableDictionary::new();
         unsafe {
             add_pair(&mut dict, kSecClass.to_void(), kSecClassGenericPassword.to_void());
@@ -120,16 +120,69 @@ mod platform {
                 kSecAttrAccount.to_void(),
                 CFString::new(ACCOUNT).as_CFTypeRef() as *const c_void,
             );
-            add_pair(
-                &mut dict,
-                kSecUseDataProtectionKeychain.to_void(),
-                CFBoolean::true_value().to_void(),
-            );
+            if data_protection {
+                add_pair(
+                    &mut dict,
+                    kSecUseDataProtectionKeychain.to_void(),
+                    CFBoolean::true_value().to_void(),
+                );
+            }
         }
         dict
     }
 
+    /// Translate the most common keychain OSStatus values into a
+    /// human-readable name so JS-side error toasts are diagnosable.
+    /// Anything we don't know just falls back to the raw number.
+    fn osstatus_name(status: i32) -> &'static str {
+        match status {
+            0 => "ok",
+            -25291 => "errSecNotAvailable",
+            -25299 => "errSecDuplicateItem",
+            -25300 => "errSecItemNotFound",
+            -25308 => "errSecInteractionNotAllowed",
+            -34018 => "errSecMissingEntitlement",
+            -50 => "errSecParam",
+            _ => "unknown",
+        }
+    }
+
     pub fn save(key_id: &str, key_b64: &str) -> Result<(), String> {
+        // We try TWO keychains in order:
+        //   1. Data protection keychain with full userPresence ACL.
+        //      This is the modern path and what release builds want.
+        //   2. Legacy file-based keychain (no kSecUseDataProtectionKeychain),
+        //      same userPresence ACL.
+        //
+        // Why fall back? The data protection keychain refuses to
+        // accept items with an SecAccessControl object from binaries
+        // that lack the keychain-access-groups entitlement and are
+        // not properly code-signed. `tauri dev` produces an
+        // ad-hoc-signed binary with no entitlements, so SecItemAdd
+        // returns errSecMissingEntitlement (-34018). The legacy
+        // keychain is more permissive in dev mode while still
+        // enforcing the userPresence ACL on read.
+        save_inner(key_id, key_b64, true)
+            .or_else(|err1| {
+                // Only fall back on errors that suggest the modern
+                // keychain refused us; param/duplicate errors mean
+                // the caller's input is wrong and we shouldn't paper
+                // over them.
+                if err1.contains("errSecMissingEntitlement")
+                    || err1.contains("errSecNotAvailable")
+                    || err1.contains("-34018")
+                    || err1.contains("-25291")
+                {
+                    save_inner(key_id, key_b64, false).map_err(|err2| {
+                        format!("dataProtection: {err1}; legacy: {err2}")
+                    })
+                } else {
+                    Err(err1)
+                }
+            })
+    }
+
+    fn save_inner(key_id: &str, key_b64: &str, data_protection: bool) -> Result<(), String> {
         let service = service_for(key_id);
 
         // Build a SecAccessControl requiring user presence. The
@@ -145,7 +198,7 @@ mod platform {
         // fail with `errSecDuplicateItem` otherwise. We don't
         // propagate clear errors - the caller's intent is "set this
         // to the new value", a stale unreadable entry shouldn't block.
-        let _ = clear(key_id);
+        let _ = clear_inner(key_id, data_protection);
 
         // Hold the temporaries in named bindings so the CFString /
         // CFData / SecAccessControl don't drop before SecItemAdd.
@@ -176,11 +229,13 @@ mod platform {
                 kSecAttrAccessControl.to_void(),
                 access.as_CFTypeRef() as *const c_void,
             );
-            add_pair(
-                &mut dict,
-                kSecUseDataProtectionKeychain.to_void(),
-                CFBoolean::true_value().to_void(),
-            );
+            if data_protection {
+                add_pair(
+                    &mut dict,
+                    kSecUseDataProtectionKeychain.to_void(),
+                    CFBoolean::true_value().to_void(),
+                );
+            }
             add_pair(
                 &mut dict,
                 kSecAttrSynchronizable.to_void(),
@@ -195,14 +250,29 @@ mod platform {
             )
         };
         if status != 0 {
-            return Err(format!("SecItemAdd failed (OSStatus {status})"));
+            return Err(format!(
+                "SecItemAdd ({}) failed: {} ({status})",
+                if data_protection { "dataProtection" } else { "legacy" },
+                osstatus_name(status),
+            ));
         }
         Ok(())
     }
 
     pub fn load(key_id: &str) -> Result<String, String> {
+        // Try the modern keychain first, fall back to legacy. Mirrors
+        // save() so a key written via the legacy fallback can be read
+        // back on the next cold start.
+        load_inner(key_id, true).or_else(|err1| {
+            load_inner(key_id, false).map_err(|err2| {
+                format!("dataProtection: {err1}; legacy: {err2}")
+            })
+        })
+    }
+
+    fn load_inner(key_id: &str, data_protection: bool) -> Result<String, String> {
         let service = service_for(key_id);
-        let mut query = build_query_dict(&service);
+        let mut query = build_query_dict(&service, data_protection);
         // kSecMatchLimit takes a CFNumber for "n results" or one of
         // the kSecMatchLimit{One,All} CFString constants. The "one"
         // constant isn't re-exported by security-framework-sys 2.x,
@@ -230,9 +300,16 @@ mod platform {
         };
         if status != 0 {
             if status == errSecItemNotFound {
-                return Err("no wrap key found in keychain".to_string());
+                return Err(format!(
+                    "no wrap key found ({})",
+                    if data_protection { "dataProtection" } else { "legacy" },
+                ));
             }
-            return Err(format!("SecItemCopyMatching failed (OSStatus {status})"));
+            return Err(format!(
+                "SecItemCopyMatching ({}) failed: {} ({status})",
+                if data_protection { "dataProtection" } else { "legacy" },
+                osstatus_name(status),
+            ));
         }
         if result.is_null() {
             return Err("keychain returned empty payload".to_string());
@@ -245,13 +322,27 @@ mod platform {
     }
 
     pub fn clear(key_id: &str) -> Result<(), String> {
+        // Best-effort: try both keychains so sign-out actually clears
+        // whatever path enrollment used. Surface any non-not-found
+        // error from the modern keychain only - legacy errors aren't
+        // worth propagating.
+        let r1 = clear_inner(key_id, true);
+        let _ = clear_inner(key_id, false);
+        r1
+    }
+
+    fn clear_inner(key_id: &str, data_protection: bool) -> Result<(), String> {
         let service = service_for(key_id);
-        let query = build_query_dict(&service);
+        let query = build_query_dict(&service, data_protection);
         let status = unsafe {
             SecItemDelete(query.to_immutable().as_concrete_TypeRef())
         };
         if status != 0 && status != errSecItemNotFound {
-            return Err(format!("SecItemDelete failed (OSStatus {status})"));
+            return Err(format!(
+                "SecItemDelete ({}) failed: {} ({status})",
+                if data_protection { "dataProtection" } else { "legacy" },
+                osstatus_name(status),
+            ));
         }
         Ok(())
     }
