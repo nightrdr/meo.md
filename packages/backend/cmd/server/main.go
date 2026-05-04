@@ -1,17 +1,12 @@
 // Command server is the meo.md backend HTTP daemon.
 //
-// This file is the *only* place that knows how the pieces wire
-// together - the composition root. Every dependency is constructed
-// here and passed down by parameter:
+// Composition root — every dependency is constructed here and passed
+// down by parameter, so a test can swap any piece for a fake.
 //
-//   Config → Store → (UserStore, AccountStore, NoteStore, SyncCursor)
-//                  ↘ Hasher
-//                  ↘ JWTSigner
-//                              ↘ api.NewServer → Routes → http.Server
-//
-// No package globals, no init() side effects, no service locator.
-// A test that wants to swap, say, the JWTSigner for a fake one
-// constructs its own Server and skips this file.
+//   Config → Store (Postgres pool + sub-stores)
+//          → GoTrueClient (HTTP wrapper around Supabase Auth)
+//          → JWTVerifier (HS256 verifier for Supabase access tokens)
+//          ↘ api.NewServer → Routes → http.Server
 package main
 
 import (
@@ -21,11 +16,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
-
-	"path/filepath"
 
 	"meo.md/backend/internal/api"
 	"meo.md/backend/internal/auth"
@@ -40,16 +34,26 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
-	st, err := store.Open(cfg.DBPath)
+	st, err := store.Open(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("store: %v", err)
 	}
 	defer st.Close()
 
-	hasher := auth.NewHasher()
-	signer := auth.NewJWTSigner(cfg.JWTSecret, 30*24*time.Hour)
+	gt, err := auth.NewGoTrueClient(cfg.SupabaseURL, cfg.SupabaseAnonKey)
+	if err != nil {
+		log.Fatalf("gotrue: %v", err)
+	}
+	jv, err := auth.NewJWTVerifier(cfg.SupabaseJWTSecret)
+	if err != nil {
+		log.Fatalf("jwt: %v", err)
+	}
 
-	srv := api.NewServer(st.Users, st.Accounts, st.Notes, st.SyncCursor, hasher, signer)
+	if err := os.MkdirAll(cfg.AttachmentDir, 0o700); err != nil {
+		log.Fatalf("attachment dir: %v", err)
+	}
+
+	srv := api.NewServer(st, gt, jv, cfg.AttachmentDir)
 
 	// ─── Model download subsystem ───────────────────────────────────
 	// Catalogue is embedded in the binary; ops can override the file
@@ -82,11 +86,14 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	// Graceful shutdown - SIGINT/SIGTERM stops accepting new
+	// Graceful shutdown — SIGINT/SIGTERM stops accepting new
 	// connections, lets in-flight requests finish for up to 10s, then
-	// closes the DB.
+	// closes the DB pool.
 	go func() {
 		log.Printf("meo.md backend listening on http://localhost:%d", cfg.Port)
+		log.Printf("  → postgres: %s", cfg.DatabaseURL)
+		log.Printf("  → gotrue:   %s", cfg.SupabaseURL)
+		log.Printf("  → attach:   %s", cfg.AttachmentDir)
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("listen: %v", err)
 		}

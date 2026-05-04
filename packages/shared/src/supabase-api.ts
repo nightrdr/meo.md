@@ -130,6 +130,18 @@ export class SupabaseApiClient {
     if (typeof e.message === 'string' && /jwt expired|invalid jwt|jwt verification/i.test(e.message)) {
       return true;
     }
+    // Postgres 42501 (insufficient_privilege) surfaces as HTTP 403 with
+    // a "permission denied for table …" message. In our schema every
+    // authenticated user has table-level grants and per-row gating goes
+    // through RLS (which returns empty rows, not errors), so 42501
+    // uniquely means "request reached PG as anon" — i.e. no JWT or a
+    // dropped Authorization header. Treat it the same as 401: refresh
+    // the access token and retry once. If refresh fails, the original
+    // 403 propagates so the UI can route the user back through auth.
+    if (e.code === '42501') return true;
+    if (e.status === 403 && typeof e.message === 'string' && /permission denied for/i.test(e.message)) {
+      return true;
+    }
     return false;
   }
 

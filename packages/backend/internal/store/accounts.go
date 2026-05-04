@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
 )
@@ -14,8 +15,8 @@ type Account struct {
 	Salt               []byte
 	EncryptedMasterKey []byte
 	MasterKeyNonce     []byte
-	KDFParamsJSON      string // raw JSON; opaque to the server
-	CreatedAt          int64
+	KDFParamsJSON      json.RawMessage // stored as jsonb
+	CreatedAt          int64           // unix millis
 }
 
 type AccountStore struct{ db *sql.DB }
@@ -23,24 +24,26 @@ type AccountStore struct{ db *sql.DB }
 // Get returns the wrapper for the given user, or ErrNotFound.
 func (s *AccountStore) Get(userID string) (*Account, error) {
 	row := s.db.QueryRow(
-		`SELECT salt, encrypted_master_key, master_key_nonce, kdf_params
-		   FROM accounts WHERE user_id = ?`,
+		`SELECT salt, encrypted_master_key, master_key_nonce, kdf_params, created_at
+		   FROM meo.accounts WHERE user_id = $1::uuid`,
 		userID,
 	)
 	a := Account{UserID: userID}
-	if err := row.Scan(&a.Salt, &a.EncryptedMasterKey, &a.MasterKeyNonce, &a.KDFParamsJSON); err != nil {
+	var createdAt time.Time
+	if err := row.Scan(&a.Salt, &a.EncryptedMasterKey, &a.MasterKeyNonce, &a.KDFParamsJSON, &createdAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, err
 	}
+	a.CreatedAt = createdAt.UnixMilli()
 	return &a, nil
 }
 
-// Exists is a cheaper check used by /auth/login to set has_account.
+// Exists is a cheaper check used on the auth path.
 func (s *AccountStore) Exists(userID string) (bool, error) {
 	var n int
-	err := s.db.QueryRow(`SELECT 1 FROM accounts WHERE user_id = ?`, userID).Scan(&n)
+	err := s.db.QueryRow(`SELECT 1 FROM meo.accounts WHERE user_id = $1::uuid`, userID).Scan(&n)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -50,22 +53,16 @@ func (s *AccountStore) Exists(userID string) (bool, error) {
 	return true, nil
 }
 
-// Create inserts a wrapper. Returns ErrConflict if one already exists
-// (matches the TS behavior of refusing to overwrite - a re-init has
-// to come through a separate flow).
+// Create inserts a wrapper. Returns ErrConflict if one already exists.
 func (s *AccountStore) Create(a *Account) error {
-	_, err := s.db.Exec(
-		`INSERT INTO accounts
-		   (user_id, salt, encrypted_master_key, master_key_nonce, kdf_params, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		a.UserID, a.Salt, a.EncryptedMasterKey, a.MasterKeyNonce, a.KDFParamsJSON,
-		time.Now().UnixMilli(),
-	)
-	if err != nil {
-		if isUniqueViolation(err) {
-			return ErrConflict
-		}
-		return err
+	if len(a.KDFParamsJSON) == 0 {
+		a.KDFParamsJSON = json.RawMessage(`{}`)
 	}
-	return nil
+	_, err := s.db.Exec(
+		`INSERT INTO meo.accounts
+		   (user_id, salt, encrypted_master_key, master_key_nonce, kdf_params)
+		 VALUES ($1::uuid, $2, $3, $4, $5::jsonb)`,
+		a.UserID, a.Salt, a.EncryptedMasterKey, a.MasterKeyNonce, string(a.KDFParamsJSON),
+	)
+	return translatePgError(err)
 }

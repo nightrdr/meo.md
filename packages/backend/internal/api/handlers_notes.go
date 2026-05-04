@@ -13,11 +13,10 @@ import (
 
 // syncNotes returns every note for the user with version > since.
 // Cursor in the response is the highest version seen, or `since` if
-// nothing came back - clients persist this and pass it on the next
-// poll.
+// nothing came back — clients persist this and pass it on the next poll.
 func (s *Server) syncNotes(c *gin.Context) {
 	since, _ := strconv.ParseInt(c.DefaultQuery("since", "0"), 10, 64)
-	rows, err := s.notes.ListSince(claimsFor(c).Sub, since)
+	rows, err := s.store.Notes.ListSince(claimsFor(c).Sub, since)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "sync failed"})
 		return
@@ -33,7 +32,7 @@ func (s *Server) syncNotes(c *gin.Context) {
 	c.JSON(http.StatusOK, syncResponse{Notes: out, Cursor: cursor})
 }
 
-// upsertNote is the create-or-update path. Behavior:
+// upsertNote is the create-or-update path. Behaviour:
 //   - 400 if any required field is missing or unparseable
 //   - 403 if the note id exists under a different user
 //   - 409 if the incoming HLC is not strictly greater than stored
@@ -56,16 +55,15 @@ func (s *Server) upsertNote(c *gin.Context) {
 		return
 	}
 
-	saved, err := s.notes.Upsert(claimsFor(c).Sub, s.sync, store.UpsertInput{
-		ID: req.ID, EncryptedContent: ct, Nonce: nonce, HLCTimestamp: req.HLCTimestamp,
+	saved, err := s.store.Notes.Upsert(claimsFor(c).Sub, s.store.SyncCursor, store.UpsertInput{
+		ID: req.ID, EncryptedContent: ct, Nonce: nonce,
+		HLCTimestamp: req.HLCTimestamp, IsVault: req.IsVault,
 	})
 	switch {
 	case errors.Is(err, store.ErrForbidden):
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden"})
 	case errors.Is(err, store.ErrStaleWrite):
-		// Re-read so the client gets the current row in the same
-		// response - saves a round trip on the conflict-resolve path.
-		current, getErr := s.notes.Get(req.ID)
+		current, getErr := s.store.Notes.Get(req.ID)
 		if getErr != nil {
 			c.JSON(http.StatusConflict, gin.H{"error": "stale write"})
 			return
@@ -84,7 +82,7 @@ func (s *Server) upsertNote(c *gin.Context) {
 // other devices learn about the removal via the sync poll.
 func (s *Server) deleteNote(c *gin.Context) {
 	id := c.Param("id")
-	saved, err := s.notes.Tombstone(claimsFor(c).Sub, id, s.sync)
+	saved, err := s.store.Notes.Tombstone(claimsFor(c).Sub, id, s.store.SyncCursor)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})

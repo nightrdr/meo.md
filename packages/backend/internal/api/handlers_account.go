@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
 
@@ -11,9 +12,9 @@ import (
 )
 
 // getAccount returns the encrypted-master-key wrapper for the
-// authenticated user. Pure pass-through: server never decrypts.
+// authenticated user. Pure pass-through: the server never decrypts.
 func (s *Server) getAccount(c *gin.Context) {
-	a, err := s.accounts.Get(claimsFor(c).Sub)
+	a, err := s.store.Accounts.Get(claimsFor(c).Sub)
 	if errors.Is(err, store.ErrNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "no account"})
 		return
@@ -30,8 +31,8 @@ func (s *Server) getAccount(c *gin.Context) {
 	})
 }
 
-// putAccount stores the wrapper. One-shot per user - re-init has to
-// go through a separate (un)wrap-and-rewrap flow.
+// putAccount stores the wrapper. One-shot per user — re-init goes
+// through a separate (un)wrap-and-rewrap flow.
 func (s *Server) putAccount(c *gin.Context) {
 	var req accountRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -50,12 +51,12 @@ func (s *Server) putAccount(c *gin.Context) {
 		return
 	}
 
-	err := s.accounts.Create(&store.Account{
+	err := s.store.Accounts.Create(&store.Account{
 		UserID:             claimsFor(c).Sub,
 		Salt:               salt,
 		EncryptedMasterKey: emk,
 		MasterKeyNonce:     mkn,
-		KDFParamsJSON:      string(req.KDFParams),
+		KDFParamsJSON:      json.RawMessage(req.KDFParams),
 	})
 	if errors.Is(err, store.ErrConflict) {
 		c.JSON(http.StatusConflict, gin.H{"error": "account already initialized"})

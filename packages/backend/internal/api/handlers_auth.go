@@ -1,76 +1,141 @@
 package api
 
 import (
-	"crypto/rand"
-	"encoding/hex"
+	"context"
 	"errors"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"meo.md/backend/internal/auth"
-	"meo.md/backend/internal/store"
 )
 
-// signup creates a new user. Mirrors the TS path:
-//   - body must have email + password (≥ 8 chars)
-//   - 409 on duplicate email
-func (s *Server) signup(c *gin.Context) {
-	var req signupRequest
-	if err := c.ShouldBindJSON(&req); err != nil || req.Email == "" || req.Password == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "email and password required"})
+// requestOTP forwards to GoTrue's /auth/v1/otp endpoint. Rate-limiting
+// and abuse mitigation are the upstream's job.
+func (s *Server) requestOTP(c *gin.Context) {
+	var req otpRequestRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Email == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email required"})
 		return
 	}
-	if len(req.Password) < 8 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "password too short"})
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer cancel()
+	if err := s.gotrue.RequestOTP(ctx, strings.TrimSpace(req.Email), true); err != nil {
+		writeAuthError(c, err)
 		return
 	}
-	hash, err := s.hasher.Hash(req.Password)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "hash failed"})
-		return
-	}
-	id, err := newUUID()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "uuid failed"})
-		return
-	}
-	if err := s.users.Create(id, req.Email, hash); err != nil {
-		if errors.Is(err, store.ErrConflict) {
-			c.JSON(http.StatusConflict, gin.H{"error": "email already registered"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "create user failed"})
-		return
-	}
-	c.JSON(http.StatusOK, signupResponse{UserID: id})
+	c.JSON(http.StatusOK, otpRequestResponse{Sent: true})
 }
 
-// login verifies credentials and returns a JWT + has_account flag.
-// Note: returns 401 on both unknown email and bad password - never
-// distinguish, to avoid email enumeration.
-func (s *Server) login(c *gin.Context) {
-	var req loginRequest
+// verifyOTP exchanges a code for an access + refresh token, then
+// looks up whether the user already has an account row so the
+// desktop can route to passphrase vs. setup screens in one trip.
+func (s *Server) verifyOTP(c *gin.Context) {
+	var req otpVerifyRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Email == "" || req.Token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email and token required"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer cancel()
+	sess, err := s.gotrue.VerifyOTP(ctx, strings.TrimSpace(req.Email), strings.TrimSpace(req.Token))
+	if err != nil {
+		writeAuthError(c, err)
+		return
+	}
+	hasAccount, _ := s.store.Accounts.Exists(sess.User.ID)
+	c.JSON(http.StatusOK, authLoginResponse{
+		JWT:          sess.AccessToken,
+		UserID:       sess.User.ID,
+		HasAccount:   hasAccount,
+		RefreshToken: sess.RefreshToken,
+	})
+}
+
+// refresh exchanges a refresh_token for a new access + refresh pair.
+// GoTrue rotates refresh tokens; the desktop persists the new one and
+// drops the old one as soon as this returns.
+func (s *Server) refresh(c *gin.Context) {
+	var req refreshRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.RefreshToken == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "refresh_token required"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer cancel()
+	sess, err := s.gotrue.Refresh(ctx, req.RefreshToken)
+	if err != nil {
+		writeAuthError(c, err)
+		return
+	}
+	hasAccount, _ := s.store.Accounts.Exists(sess.User.ID)
+	c.JSON(http.StatusOK, authLoginResponse{
+		JWT:          sess.AccessToken,
+		UserID:       sess.User.ID,
+		HasAccount:   hasAccount,
+		RefreshToken: sess.RefreshToken,
+	})
+}
+
+// logout revokes the current session's refresh token. Authed —
+// without a valid JWT we don't know whose session to nuke.
+func (s *Server) logout(c *gin.Context) {
+	bearer := stripBearer(c.GetHeader("Authorization"))
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
+	defer cancel()
+	if err := s.gotrue.Logout(ctx, bearer); err != nil {
+		writeAuthError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// passwordSignup is the legacy e2e signup path. Most users go through
+// requestOTP/verifyOTP; this is here so existing test scripts and
+// non-interactive integrations keep working.
+func (s *Server) passwordSignup(c *gin.Context) {
+	var req passwordRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Email == "" || len(req.Password) < 8 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email and password (>=8 chars) required"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer cancel()
+	sess, err := s.gotrue.PasswordSignup(ctx, strings.TrimSpace(req.Email), req.Password)
+	if err != nil {
+		writeAuthError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, authLoginResponse{
+		JWT:          sess.AccessToken,
+		UserID:       sess.User.ID,
+		RefreshToken: sess.RefreshToken,
+	})
+}
+
+// passwordLogin: same legacy path for non-OTP login.
+func (s *Server) passwordLogin(c *gin.Context) {
+	var req passwordRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.Email == "" || req.Password == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "email and password required"})
 		return
 	}
-	u, err := s.users.FindByEmail(req.Email)
-	if err != nil || !s.hasher.Verify(req.Password, u.PasswordHash) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid credentials"})
-		return
-	}
-	hasAccount, err := s.accounts.Exists(u.ID)
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+	defer cancel()
+	sess, err := s.gotrue.PasswordLogin(ctx, strings.TrimSpace(req.Email), req.Password)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "lookup failed"})
+		writeAuthError(c, err)
 		return
 	}
-	token, err := s.signer.Sign(u.ID, u.Email)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "sign failed"})
-		return
-	}
-	c.JSON(http.StatusOK, loginResponse{JWT: token, HasAccount: hasAccount, UserID: u.ID})
+	hasAccount, _ := s.store.Accounts.Exists(sess.User.ID)
+	c.JSON(http.StatusOK, authLoginResponse{
+		JWT:          sess.AccessToken,
+		UserID:       sess.User.ID,
+		HasAccount:   hasAccount,
+		RefreshToken: sess.RefreshToken,
+	})
 }
 
 // claimsFor pulls the verified JWT claims out of the context. Called
@@ -80,16 +145,28 @@ func claimsFor(c *gin.Context) *auth.Claims {
 	return c.MustGet(claimsKey).(*auth.Claims)
 }
 
-// newUUID returns a v4-style UUID string. Avoids a dependency on
-// google/uuid for one call site - generates 16 random bytes and
-// formats them with the version + variant bits set.
-func newUUID() (string, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
+// writeAuthError maps a gotrue.APIError into a 4xx response with the
+// upstream's status. Anything else is a 502 (couldn't reach GoTrue).
+func writeAuthError(c *gin.Context, err error) {
+	var apiErr *auth.APIError
+	if errors.As(err, &apiErr) {
+		status := apiErr.Status
+		if status < 400 || status >= 600 {
+			status = http.StatusUnauthorized
+		}
+		body := gin.H{"error": apiErr.Message}
+		if apiErr.Code != "" {
+			body["code"] = apiErr.Code
+		}
+		c.JSON(status, body)
+		return
 	}
-	b[6] = (b[6] & 0x0f) | 0x40 // version 4
-	b[8] = (b[8] & 0x3f) | 0x80 // variant 10
-	hexStr := hex.EncodeToString(b)
-	return hexStr[0:8] + "-" + hexStr[8:12] + "-" + hexStr[12:16] + "-" + hexStr[16:20] + "-" + hexStr[20:32], nil
+	c.JSON(http.StatusBadGateway, gin.H{"error": "auth backend unreachable", "detail": err.Error()})
+}
+
+func stripBearer(h string) string {
+	if strings.HasPrefix(h, "Bearer ") {
+		return h[len("Bearer "):]
+	}
+	return h
 }

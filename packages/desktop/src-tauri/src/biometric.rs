@@ -457,7 +457,9 @@ mod platform {
         PasswordVault::new().map_err(|e| format!("PasswordVault::new: {e}"))
     }
 
-    pub fn save(key_id: &str, key_b64: &str) -> Result<(), String> {
+    pub const TIER_WINDOWS_VAULT: &str = "windows-vault";
+
+    pub fn save(key_id: &str, key_b64: &str) -> Result<String, String> {
         let v = vault()?;
         let resource = HSTRING::from(service_for(key_id));
         let user = HSTRING::from(USERNAME);
@@ -468,10 +470,13 @@ mod platform {
         let cred = PasswordCredential::CreatePasswordCredential(&resource, &user, &secret)
             .map_err(|e| format!("create cred: {e}"))?;
         v.Add(&cred).map_err(|e| format!("vault Add: {e}"))?;
-        Ok(())
+        // Windows has a single storage tier (PasswordVault). Returning a
+        // constant so the JS side's tier-hint protocol stays uniform
+        // across platforms.
+        Ok(TIER_WINDOWS_VAULT.to_string())
     }
 
-    pub fn load(key_id: &str) -> Result<String, String> {
+    pub fn load(key_id: &str, _hint: Option<&str>) -> Result<String, String> {
         // Prompt for Windows Hello before yielding the credential.
         // PasswordVault itself is keyed to the Windows account; the
         // explicit user-presence check is what gives us "biometric
@@ -524,11 +529,11 @@ mod platform {
         false
     }
 
-    pub fn save(_key_id: &str, _key_b64: &str) -> Result<(), String> {
+    pub fn save(_key_id: &str, _key_b64: &str) -> Result<String, String> {
         Err("biometric not available on this OS".to_string())
     }
 
-    pub fn load(_key_id: &str) -> Result<String, String> {
+    pub fn load(_key_id: &str, _hint: Option<&str>) -> Result<String, String> {
         Err("biometric not available on this OS".to_string())
     }
 

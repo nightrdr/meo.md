@@ -2,10 +2,18 @@
   "name": "meo.md",
   "version": "0.1.0",
   "private": true,
-  "workspaces": ["packages/shared", "packages/desktop", "packages/mobile-rn"],
+  "workspaces": [
+    "packages/shared",
+    "packages/desktop",
+    "packages/mobile-rn"
+  ],
   "scripts": {
     "dev:backend": "make -C packages/backend dev",
     "dev:desktop": "npm --workspace @meo/desktop run dev",
     "build": "npm --workspace @meo/shared run build && make -C packages/backend build && npm --workspace @meo/desktop run build"
+  },
+  "devDependencies": {
+    "@rollup/rollup-win32-x64-msvc": "^4.60.2",
+    "@tauri-apps/cli-win32-x64-msvc": "^2.11.0"
   }
 }
