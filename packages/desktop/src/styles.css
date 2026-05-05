@@ -1307,6 +1307,63 @@ button, input, textarea, select { font: inherit; color: inherit; }
   padding: 1px 5px; border-radius: 3px;
   letter-spacing: 0.5px; text-transform: uppercase;
 }
+/* Callouts inside the model dropdown — install Ollama / add model */
+.model-row-callout {
+  width: 100%;
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 10px; margin: 2px 0;
+  border-radius: 7px;
+  border: 1px dashed var(--paper-edge);
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+.model-row-callout:hover { background: var(--hover); }
+.model-row-callout.subtle {
+  border-style: solid;
+  border-color: transparent;
+  padding: 6px 10px;
+}
+.model-row-callout.subtle:hover { background: var(--hover); }
+
+/* AddModelPicker — used in Settings/AI or as a modal */
+.add-model-picker { display: flex; flex-direction: column; gap: 12px; }
+.add-model-intro {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 10px 12px; border-radius: 8px;
+  background: var(--paper-2);
+  font-size: 12px; color: var(--ink2); line-height: 1.45;
+}
+.add-model-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.add-model-row {
+  border: 1px solid var(--paper-edge); border-radius: 10px;
+  padding: 10px 12px; background: var(--paper);
+}
+.add-model-row-head {
+  display: flex; align-items: center; gap: 12px;
+  justify-content: space-between;
+}
+.add-model-row-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.add-model-row-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+.add-model-row-tag { font-size: 11px; color: var(--ink3); }
+.add-model-badge {
+  font-size: 9.5px; font-weight: 700;
+  padding: 2px 6px; border-radius: 4px;
+  letter-spacing: 0.5px; text-transform: uppercase;
+}
+.add-model-badge.cpu-ok { background: #E1EBD2; color: #3F5A2C; }
+.add-model-row-meta {
+  display: flex; gap: 14px; flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 11px; color: var(--ink3);
+}
+.add-model-row-meta b { color: var(--ink2); font-weight: 600; margin-right: 4px; }
+.add-model-progress { font-size: 11px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.add-model-installed { font-size: 11px; color: #3F5A2C; font-weight: 600; }
+.add-model-row-error {
+  margin-top: 6px; font-size: 11px; color: #B04A3A;
+}
 .model-download-more {
   width: 100%; text-align: left;
   padding: 8px 10px; margin: 2px 0;

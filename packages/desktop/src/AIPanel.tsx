@@ -57,6 +57,12 @@ export function AIPanel({ notes, modelId, onClose, onOpenNote, applyToolCall }: 
   const [statusDetail, setStatusDetail] = useState<string>('');
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Note IDs the model has touched in this session — every successful
+  // tool-call resultId, every [note:<id>] cited in an assistant turn.
+  // We pin these into the next turn's CONTEXT and into the parser
+  // whitelist so "update the note you just created" / "delete the
+  // first one" actually resolves to a real id.
+  const recentIdsRef = useRef<Set<string>>(new Set());
 
   // Probe runtime + Ollama availability once on mount
   useEffect(() => {
@@ -119,6 +125,7 @@ export function AIPanel({ notes, modelId, onClose, onOpenNote, applyToolCall }: 
         generator: rt.generator,
         modelId,
         signal: abortRef.current.signal,
+        pinnedNoteIds: recentIdsRef.current,
       });
 
       // Set retrieved context immediately so the UI can show "Looking at N notes…"
@@ -144,7 +151,18 @@ export function AIPanel({ notes, modelId, onClose, onOpenNote, applyToolCall }: 
       // assistant emitted so the user can confirm/reject each
       // proposed CRUD before we apply it. The "clean" text replaces
       // the raw stream so the JSON block doesn't leak into the UI.
-      const knownIds = new Set<string>(result.context.map(c => c.noteId));
+      // Whitelist for parseNoteToolCalls = current-turn retrieval ∪
+      // ids the model has already touched this conversation. Without
+      // the union, the model can correctly *say* "I'll update [note:X]"
+      // about a note from a prior turn and the parser would silently
+      // drop the action because X wasn't in this turn's retrieval.
+      const knownIds = new Set<string>([
+        ...result.context.map(c => c.noteId),
+        ...recentIdsRef.current,
+      ]);
+      // Also harvest [note:<id>] citations the assistant just produced
+      // so a follow-up like "update that one" resolves on the next turn.
+      for (const id of A.extractCitations(acc).ids) recentIdsRef.current.add(id);
       const { clean, actions } = A.parseNoteToolCalls(acc, knownIds);
       const toolCalls: ToolCallEntry[] = actions.map(call => ({ call, state: { status: 'proposed' } }));
       setMessages(prev => prev.map((m, i) =>
@@ -205,6 +223,14 @@ export function AIPanel({ notes, modelId, onClose, onOpenNote, applyToolCall }: 
       // applyToolCall is supposed to return {ok:false} on failure, but
       // catch a thrown error too so the chip never sticks at 'applying'.
       result = { ok: false, error: (e as Error).message ?? String(e) };
+    }
+    // Cross-turn memory: a successfully-applied create or update gives
+    // us a real id we want the model to be able to refer back to later
+    // (e.g. "rename that note we just made"). Stash it in recentIdsRef
+    // so the next ragAsk pins it into CONTEXT and parseNoteToolCalls
+    // accepts it as a target.
+    if (result.ok && result.resultId) {
+      recentIdsRef.current.add(result.resultId);
     }
     setMessages(prev => prev.map((m, i) => {
       if (i !== messageIdx || !m.toolCalls) return m;

@@ -150,6 +150,23 @@ export default function App() {
 
   const refresh = useCallback(() => setTick(x => x + 1), []);
 
+  // ─── Diagnostic logging (auth-debug) ───
+  // Tags every visibility change with a wall-clock timestamp so the
+  // user can confirm in DevTools that the periodic-refresh interval is
+  // actually firing while the window is in the foreground. The
+  // periodic-refresh effect itself logs '[auth] periodic refresh ok'
+  // / '...failed' inline, so paired with this you can spot the
+  // ~50-minute cadence (or its absence) without hooking a debugger.
+  useEffect(() => {
+    const stamp = () => new Date().toISOString();
+    console.info('[auth-debug] mount @', stamp(), 'visibility=', document.visibilityState);
+    const onVis = () => {
+      console.info('[auth-debug] visibilitychange @', stamp(), '->', document.visibilityState);
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
   // ─── Cold-start auth routing (Agent 1) ───
   // Decide whether to send the user straight into biometric unlock or
   // start at the email screen. The check is conservative: we require
@@ -406,6 +423,48 @@ export default function App() {
       });
     }
 
+    // ── Hard guarantee: api client MUST have a JWT before pullSync ──
+    //
+    // Race we're closing: every Auth.tsx success path calls api.setJwt
+    // before handing the Session to onAuth, but a few corner cases can
+    // strip it: (a) handleBiometricUnlock running with an expired JWT
+    // and a transient refresh hiccup, (b) handlePair which adopts the
+    // pairing bundle's JWT but the bundle itself has no refresh_token,
+    // (c) any future auth path that forgets to wire setJwt. Without a
+    // JWT on the client, the very first PostgREST call comes in as
+    // anon and we get the "permission denied for table notes" 403/42501
+    // the user is hitting. Try to recover by minting a fresh access
+    // token from the persisted refresh_token; if that's gone too, route
+    // back to the email screen instead of pretending to be signed in.
+    if (!s.api.jwt) {
+      console.warn('[auth] onAuth: api client has no JWT - attempting inline refresh');
+      const cur = await getMeta();
+      if (cur.jwt) {
+        s.api.setJwt(cur.jwt);
+        console.info('[auth] onAuth: restored JWT from meta');
+      } else if (cur.refresh_token && s.api instanceof SupabaseApiClient) {
+        try {
+          const r = await ensureRefresher().refreshAccessToken(cur.refresh_token);
+          await setMeta({
+            jwt: r.jwt,
+            refresh_token: r.refresh_token ?? cur.refresh_token,
+            user_id: r.user_id,
+          });
+          s.api.setJwt(r.jwt);
+          console.info('[auth] onAuth: minted fresh JWT before pullSync');
+        } catch (e) {
+          console.warn('[auth] onAuth: inline refresh failed - routing to email:', e);
+          await setMeta({ jwt: undefined, refresh_token: undefined });
+          setAuthStart({ mode: 'email' });
+          return;
+        }
+      } else {
+        console.warn('[auth] onAuth: no JWT and no refresh_token - routing to email');
+        setAuthStart({ mode: 'email' });
+        return;
+      }
+    }
+
     setSession(s);
     // Populate the attachments-renderer shim so Editor.tsx + AttachmentRenderer
     // can build an authed AttachmentsClient on demand without prop-drilling
@@ -493,9 +552,14 @@ export default function App() {
     if (!(session.api instanceof SupabaseApiClient)) return;
 
     const REFRESH_INTERVAL_MS = 50 * 60 * 1000; // 50 minutes
-    const refreshNow = async () => {
+    const refreshNow = async (cause: string) => {
+      const stamp = new Date().toISOString();
+      console.info('[auth-debug] periodic refresh tick @', stamp, 'cause=', cause);
       const cur = await getMeta();
-      if (!cur.refresh_token) return;
+      if (!cur.refresh_token) {
+        console.warn('[auth-debug] periodic refresh skipped - no refresh_token in meta');
+        return;
+      }
       try {
         const refreshed = await ensureRefresher().refreshAccessToken(cur.refresh_token);
         await setMeta({
@@ -504,22 +568,25 @@ export default function App() {
           user_id: refreshed.user_id,
         });
         (session.api as SupabaseApiClient).setJwt(refreshed.jwt);
-        console.info('[auth] periodic refresh ok');
+        console.info('[auth] periodic refresh ok @', new Date().toISOString());
       } catch (e) {
         console.warn('[auth] periodic refresh failed (will retry on next tick):', e);
       }
     };
 
+    console.info('[auth-debug] periodic refresh installed (every', REFRESH_INTERVAL_MS / 60000, 'min) @', new Date().toISOString());
+
     // Pacing: skip the tick when the document is hidden (e.g. window
     // minimized for hours) - we'll catch up on visibilitychange or
     // via the 401-retry safety net.
     const id = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void refreshNow();
+      if (document.visibilityState === 'visible') void refreshNow('interval');
+      else console.info('[auth-debug] periodic tick skipped (hidden) @', new Date().toISOString());
     }, REFRESH_INTERVAL_MS);
     const onVis = () => {
       // When the user comes back to the tab after a long pause,
       // proactively refresh so the next interaction doesn't trip 401.
-      if (document.visibilityState === 'visible') void refreshNow();
+      if (document.visibilityState === 'visible') void refreshNow('visibilitychange');
     };
     document.addEventListener('visibilitychange', onVis);
     return () => {
@@ -568,6 +635,11 @@ export default function App() {
         const saved = await saveNote(session, session.notes.get(next.id)!);
         session.notes.set(saved.id, saved);
         setStatus('idle'); setStatusMsg('Saved just now');
+        // Re-render so the sidebar (last-modified, version) and the
+        // editor (title chip, status pill) reflect the post-save row.
+        // Without this the UI shows stale metadata until the user
+        // switches notes and comes back.
+        refresh();
       } catch (e) {
         setStatus('error'); setStatusMsg(`Save failed: ${(e as Error).message}`);
       }
@@ -587,6 +659,9 @@ export default function App() {
       const saved = await saveNote(session, draft);
       session.notes.set(saved.id, saved);
       setStatus('idle'); setStatusMsg('Saved just now');
+      // Pick up the bumped version + server-stamped updated_at in
+      // sidebar and editor without waiting for the next sync poll.
+      refresh();
     } catch (e) {
       setStatus('error'); setStatusMsg(`Create failed: ${(e as Error).message}`);
     }
@@ -1289,10 +1364,14 @@ export default function App() {
             // Force a re-render so the sidebar / editor reflect the
             // mutation. setSession would re-trigger derived state but
             // we don't actually have a "session is new" event yet, so
-            // bump selectedId to the affected note (or null on delete).
+            // bump selectedId to the affected note (or null on delete)
+            // AND tick `refresh` unconditionally — without it, deletes
+            // and update-only operations that don't change selectedId
+            // leave the sidebar showing stale state.
             if (res.ok && res.resultId && call.type !== 'delete') {
               setSelectedId(res.resultId);
             }
+            refresh();
             return res;
           }}
         />

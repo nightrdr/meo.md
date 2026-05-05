@@ -85,13 +85,25 @@ Rules:
 - NEVER refuse a mutation by describing yourself or your role. Just
   emit the action; the user will confirm before it lands.
 
-Example. User: "create a note titled 'Grocery list' with milk, eggs, bread".
+Examples (showing the wire format only; do not copy the topic):
+
+User: "make a note titled X with these bullet points: A, B, C".
 Reply:
 
-I'll create that note for you.
+Got it.
 
 \`\`\`meo-actions
-{ "actions": [ { "type": "create", "title": "Grocery list", "body": "- milk\\n- eggs\\n- bread" } ] }
+{ "actions": [ { "type": "create", "title": "X", "body": "- A\\n- B\\n- C" } ] }
+\`\`\`
+
+User: "update that note to add D" (referring to a note from CONTEXT or
+a previous turn — its id appears as [note:<id>] above).
+Reply:
+
+Updated.
+
+\`\`\`meo-actions
+{ "actions": [ { "type": "update", "id": "<id-from-context-or-prior-turn>", "body": "- A\\n- B\\n- C\\n- D" } ] }
 \`\`\`
 `.trim();
 

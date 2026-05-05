@@ -6,4 +6,5 @@ export * from './vectorStore.js';
 export * from './retrieval.js';
 export * from './rag.js';
 export * from './note-tools.js';
+export * from './sysreq.js';
 export { OllamaBackend } from './backends/ollama.js';

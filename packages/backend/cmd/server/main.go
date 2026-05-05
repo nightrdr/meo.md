@@ -44,7 +44,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("gotrue: %v", err)
 	}
-	jv, err := auth.NewJWTVerifier(cfg.SupabaseJWTSecret)
+	jv, err := auth.NewJWTVerifier(cfg.SupabaseJWTSecret, cfg.SupabaseURL)
 	if err != nil {
 		log.Fatalf("jwt: %v", err)
 	}

@@ -16,6 +16,7 @@
 // collision because the manifest's display name + tag are nicer.
 
 import React, { useState, useEffect, useRef } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { Icon } from './Icon';
 import { fetchManifest, type ManifestEntry } from './modelDownload';
 
@@ -160,12 +161,32 @@ interface Props {
   dynamicModels?: DynamicModel[];
   onToggle: () => void;
   onSelect: (id: string) => void;
+  /**
+   * Open the in-app "Add model" picker. Wired from App.tsx — we keep
+   * the picker out of this component so it can mount under Settings
+   * or as a modal without coupling.
+   */
+  onOpenAddModel?: () => void;
 }
 
-export function AIControls({ aiOn, modelId, dynamicModels = [], onToggle, onSelect }: Props) {
+/**
+ * Tri-state probe of the local Ollama daemon. Polled while the
+ * dropdown is open so we can show "Install Ollama" vs "No models
+ * installed" without ever blocking first paint.
+ *
+ *   'unknown'      first paint, before the probe resolves
+ *   'not-installed' TCP connect to :11434 failed (also: not on Tauri)
+ *   'running'      daemon up — model list comes from `dynamicModels`
+ */
+type OllamaState = 'unknown' | 'not-installed' | 'running';
+
+export function AIControls({
+  aiOn, modelId, dynamicModels = [], onToggle, onSelect, onOpenAddModel,
+}: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const { models: manifestModels, loading } = useManifestModels();
+  const ollamaState = useOllamaState(aiOn);
 
   useEffect(() => {
     if (!open) return;
@@ -182,14 +203,17 @@ export function AIControls({ aiOn, modelId, dynamicModels = [], onToggle, onSele
     };
   }, [open]);
 
-  // Merge dynamic + manifest. Dynamic-discovered installed entries
-  // (Ollama-pulled) win on id collision because they signal "actually
-  // available right now", but for unknown-to-Ollama manifest entries
-  // we still show the manifest version (download path).
+  // Local models on desktop come **only** from Ollama's /api/tags.
+  // The manifest still drives the cloud section (vendor list); we
+  // filter manifest entries that overlap an Ollama-installed id so we
+  // don't double up. If Ollama isn't running or has no models, the
+  // local section is empty and the dropdown surfaces an install /
+  // add-model CTA in its place.
   const dynNorm = dynamicModels.map(normalizeDynamic);
+  const cloudFromManifest = manifestModels.filter(m => m.kind === 'commercial');
   const allModels: Model[] = [
     ...dynNorm,
-    ...manifestModels.filter(m => !dynNorm.some(d => d.id === m.id)),
+    ...cloudFromManifest.filter(m => !dynNorm.some(d => d.id === m.id)),
   ];
   const m = allModels.find(x => x.id === modelId)
     ?? allModels[0]
@@ -234,20 +258,65 @@ export function AIControls({ aiOn, modelId, dynamicModels = [], onToggle, onSele
           modelId={modelId}
           allModels={allModels}
           loading={loading}
+          ollamaState={ollamaState}
+          installedCount={dynNorm.length}
           onSelect={(id) => { onSelect(id); setOpen(false); }}
+          onOpenAddModel={() => { onOpenAddModel?.(); setOpen(false); }}
         />
       )}
     </div>
   );
 }
 
+/**
+ * Polls the Tauri side for Ollama daemon presence. Cheap (1-sec TCP
+ * probe at most). Re-runs every 10 s so a user who installs Ollama
+ * mid-session sees the dropdown switch from "Install Ollama" to the
+ * normal model list without a reload.
+ */
+function useOllamaState(aiOn: boolean): OllamaState {
+  const [state, setState] = useState<OllamaState>('unknown');
+  useEffect(() => {
+    if (!aiOn) { setState('unknown'); return; }
+    let alive = true;
+    const probe = async () => {
+      try {
+        const ok = await invoke<boolean>('ollama_check_running');
+        if (alive) setState(ok ? 'running' : 'not-installed');
+      } catch {
+        // No Tauri runtime (Vite dev tab) or command missing — treat
+        // as not-installed so the install CTA shows in the dropdown.
+        if (alive) setState('not-installed');
+      }
+    };
+    void probe();
+    const id = window.setInterval(probe, 10_000);
+    return () => { alive = false; clearInterval(id); };
+  }, [aiOn]);
+  return state;
+}
+
+async function handleInstallOllama(): Promise<void> {
+  try {
+    await invoke('ollama_open_install_page');
+  } catch (e) {
+    // Fallback for non-Tauri runtimes (dev server in a plain tab).
+    // eslint-disable-next-line no-console
+    console.warn('[meo] ollama_open_install_page failed; falling back to window.open', e);
+    window.open('https://ollama.com/download', '_blank', 'noopener');
+  }
+}
+
 function ModelDropdown({
-  modelId, allModels, loading, onSelect,
+  modelId, allModels, loading, ollamaState, installedCount, onSelect, onOpenAddModel,
 }: {
   modelId: string;
   allModels: Model[];
   loading: boolean;
+  ollamaState: OllamaState;
+  installedCount: number;
   onSelect: (id: string) => void;
+  onOpenAddModel: () => void;
 }) {
   const local = allModels.filter(m => m.kind === 'local');
   const commercial = allModels.filter(m => m.kind === 'commercial');
@@ -258,15 +327,63 @@ function ModelDropdown({
         <span className="model-dot" style={{ background: KIND_C.local.dot, width: 8, height: 8 }} />
         <span style={{ color: KIND_C.local.fg }}>Local, runs on this device</span>
       </div>
-      {loading && local.length === 0 && (
+      {loading && local.length === 0 && ollamaState === 'unknown' && (
         <div className="model-row-loading">Loading models…</div>
       )}
-      {!loading && local.length === 0 && (
-        <div className="model-row-loading">No local models available.</div>
+
+      {/* Ollama daemon not reachable → install CTA. */}
+      {ollamaState === 'not-installed' && (
+        <button
+          type="button"
+          className="model-row-callout"
+          onClick={() => { void handleInstallOllama(); }}
+        >
+          <Icon.Warning size={12} stroke={KIND_C.local.fg} style={{ flexShrink: 0 }} />
+          <div className="model-row-body">
+            <div className="model-row-name"><span>Install Ollama</span></div>
+            <div className="model-row-meta">
+              <span style={{ color: KIND_C.local.fg, fontWeight: 600 }}>Required for local models</span>
+              <span> · opens ollama.com/download</span>
+            </div>
+          </div>
+        </button>
       )}
+
+      {/* Daemon up but zero models pulled → link to picker. */}
+      {ollamaState === 'running' && installedCount === 0 && (
+        <button
+          type="button"
+          className="model-row-callout"
+          onClick={onOpenAddModel}
+        >
+          <Icon.Sparkle size={12} stroke={KIND_C.local.fg} style={{ flexShrink: 0 }} />
+          <div className="model-row-body">
+            <div className="model-row-name"><span>No models installed — Add one</span></div>
+            <div className="model-row-meta">
+              <span style={{ color: KIND_C.local.fg, fontWeight: 600 }}>Browse curated GGUFs</span>
+            </div>
+          </div>
+        </button>
+      )}
+
       {local.map(m => (
         <ModelRow key={m.id} m={m} selected={m.id === modelId} onClick={() => onSelect(m.id)} />
       ))}
+
+      {/* Always offer "Add another" when Ollama is up and at least one model exists. */}
+      {ollamaState === 'running' && installedCount > 0 && (
+        <button
+          type="button"
+          className="model-row-callout subtle"
+          onClick={onOpenAddModel}
+        >
+          <div className="model-row-body">
+            <div className="model-row-meta">
+              <span style={{ color: KIND_C.local.fg, fontWeight: 600 }}>+ Add another model</span>
+            </div>
+          </div>
+        </button>
+      )}
 
       <div className="model-section-header" style={{ borderTop: '1px solid var(--paper-edge)', marginTop: 6, paddingTop: 12 }}>
         <span className="model-dot" style={{ background: KIND_C.commercial.dot, width: 8, height: 8 }} />

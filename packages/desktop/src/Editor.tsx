@@ -169,6 +169,14 @@ export function Editor({
   // When the textarea drives an update (user types in source) we set this
   // flag so the TipTap onUpdate doesn't echo it back and produce a loop.
   const sourceDrivenRef = useRef(false);
+  // Tracks the body currently materialized in TipTap (by user typing
+  // or by an external setContent). Used to detect external mutations
+  // — when the `note.body` prop changes to something we did NOT just
+  // type/insert (e.g. the AI tool-call applied an update), we re-set
+  // the editor's content. Without this, an LLM-driven update to the
+  // currently-open note silently fails to render until the user
+  // navigates away and back.
+  const editorBodyRef = useRef(note.body);
 
   const editor = useEditor({
     extensions: [
@@ -201,7 +209,12 @@ export function Editor({
     content: htmlFromMarkdown(note.body),
     onUpdate: ({ editor }) => {
       if (sourceDrivenRef.current) return;
-      onChange({ ...note, body: markdownFromHtml(editor.getHTML()) });
+      const nextBody = markdownFromHtml(editor.getHTML());
+      // Stamp the in-editor body so the prop-sync effect can tell
+      // "user just typed this" apart from "an external change is
+      // arriving via the prop".
+      editorBodyRef.current = nextBody;
+      onChange({ ...note, body: nextBody });
     },
   });
 
@@ -422,10 +435,24 @@ export function Editor({
     if (note.id !== lastNoteId.current) {
       lastNoteId.current = note.id;
       editor.commands.setContent(htmlFromMarkdown(note.body), false);
+      editorBodyRef.current = note.body;
       // Reset find state when switching notes — a query from the
       // previous note doesn't apply.
       setFindOpen(false); setFindQuery(''); setFindIndex(0);
       setBubble({ kind: 'idle' });
+      return;
+    }
+    // Same note — but the body prop changed. If the new body matches
+    // what's currently in the editor (the round-trip from user typing
+    // → onChange → saveNote → session.notes.set), this is an echo and
+    // we leave the editor alone. If it differs, an EXTERNAL source
+    // (AI tool-call apply, sync poll pulling a remote update) wrote a
+    // new body — replay it into TipTap so the user sees it.
+    if (note.body !== editorBodyRef.current) {
+      sourceDrivenRef.current = true;
+      editor.commands.setContent(htmlFromMarkdown(note.body), false);
+      editorBodyRef.current = note.body;
+      queueMicrotask(() => { sourceDrivenRef.current = false; });
     }
   }, [note.id, note.body, editor]);
 

@@ -25,6 +25,7 @@
 use tauri::{Emitter, Manager};
 
 mod biometric;
+mod ollama;
 
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -43,6 +44,9 @@ pub fn run() {
             biometric::biometric_load,
             biometric::biometric_clear,
             biometric::biometric_available,
+            ollama::ollama_check_running,
+            ollama::ollama_install_url,
+            ollama::ollama_open_install_page,
         ])
         .on_menu_event(|app, event| {
             // Forward every custom-menu id to JS as `menu://<id>`.

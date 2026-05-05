@@ -29,6 +29,15 @@ export interface RagAskArgs {
    * (e.g. for kiosks that should be strictly read-only).
    */
   enableNoteTools?: boolean;
+  /**
+   * Note IDs the user has already touched in this conversation —
+   * created, updated, or cited in prior assistant turns. Forced into
+   * CONTEXT regardless of the current query's retrieval score so
+   * "update that note" type follow-ups have a target id to refer to.
+   * The IDs are also returned to the caller via the result so they
+   * can be unioned into parseNoteToolCalls' `knownNoteIds`.
+   */
+  pinnedNoteIds?: Iterable<string>;
 }
 
 export interface RagAskResult {
@@ -52,7 +61,7 @@ const SYSTEM_PROMPT_CHAT = `You are Meo, the user's personal assistant grounded 
 - Keep replies conversational and brief unless asked for depth.`;
 
 export async function ragAsk(args: RagAskArgs): Promise<RagAskResult> {
-  const context = await hybridRetrieve({
+  const retrieved = await hybridRetrieve({
     query: args.query,
     embedder: args.embedder,
     vectorStore: args.vectorStore,
@@ -60,6 +69,32 @@ export async function ragAsk(args: RagAskArgs): Promise<RagAskResult> {
     notes: args.notes,
     options: { k: 8 },
   });
+
+  // Union pinned IDs (recent tool-call targets, prior citations) into
+  // the context. A pinned ID that's already in `retrieved` is left
+  // alone — duplicates would just confuse the model. A pinned ID that
+  // ISN'T in retrieved gets a synthesized chunk built from the
+  // in-memory note (title + first ~600 chars of body) so the model
+  // sees enough to refer back to it via [note:<id>]. Without this, a
+  // follow-up like "update the note you just created" can't resolve
+  // because the new note wasn't retrieved by semantic search yet.
+  const context: RetrievedChunk[] = [...retrieved];
+  if (args.pinnedNoteIds) {
+    const seen = new Set(context.map(c => c.noteId));
+    for (const id of args.pinnedNoteIds) {
+      if (seen.has(id)) continue;
+      const n = args.notes.get(id);
+      if (!n) continue;
+      const snippet = (n.body ?? '').slice(0, 600);
+      context.push({
+        noteId: id,
+        title: n.title ?? 'Untitled',
+        snippet,
+        score: 0,           // synthesized; ranking is not used past this point
+      });
+      seen.add(id);
+    }
+  }
 
   // Both Ask and Chat opt into note-mutation tools by default. The
   // user always sees a confirmation chip before any mutation lands,
